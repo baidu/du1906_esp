@@ -1,0 +1,5 @@
+menuconfig CLOUD_LOG
+    bool "Cloud Log"
+
+
+

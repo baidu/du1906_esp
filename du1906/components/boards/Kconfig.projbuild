@@ -1,0 +1,28 @@
+menu "Customer Audio Board"
+
+choice CUSTOMER_AUDIO_BOARD
+    prompt "Customer audio board"
+    default CUPID_BOARD_V2
+    help
+        Select an audio board to use with the ESP-ADF
+
+config CUPID_BOARD_V1_0_2
+    depends on AUDIO_BOARD_CUSTOM
+    bool "Cupid board v1.0"
+
+config CUPID_BOARD_V2
+    depends on AUDIO_BOARD_CUSTOM
+    bool "Cupid board v2.0"
+
+config ESP32_KORVO_DU1906_BOARD
+    depends on AUDIO_BOARD_CUSTOM
+    bool "ESP32_KORVO_DU1906"
+
+config MINI_BOARD
+    depends on AUDIO_BOARD_CUSTOM
+    bool "MINI_DU1906"
+
+endchoice
+
+endmenu
+

@@ -1,0 +1,18 @@
+menu "music skill"
+
+config ENABLE_MUSIC_UNIT
+    bool "enable music unit"
+
+config MIGU_MUSIC
+    depends on ENABLE_MUSIC_UNIT
+    bool "migu music"
+
+config HIMALAYA_MUSIC
+    depends on ENABLE_MUSIC_UNIT
+    bool "Himalaya music"
+
+config QING_MUSIC
+    depends on ENABLE_MUSIC_UNIT
+    bool "qing music"
+
+endmenu
