@@ -1,0 +1,32 @@
+.config
+*.o
+*.pyc
+
+# gtags
+GTAGS
+GRTAGS
+GPATH
+
+# emacs
+.dir-locals.el
+
+# emacs temp file suffixes
+*~
+.#*
+\#*#
+# MacOS directory files
+.DS_Store
+
+# eclipse setting
+.settings
+
+# Example project files
+**/sdkconfig
+**/sdkconfig.old
+**/build
+
+# Doc build artifacts
+
+# gcov coverage reports
+
+.vscode
