@@ -21,6 +21,7 @@ The board together with the platform provide easy way to develop a smart speaker
 You can get this board from taobao.[ESP32-Korvo-DU1906](https://item.taobao.com/item.htm?spm=a230r.1.14.19.556976f3dzOhTI&id=618240136741&ns=1&abbucket=0#detail)
 
     **Note**: This example only support 16M flash version! If your board is 8M flash, please contact us for help.
+    **Note**: This example can't support uart console， because uart0 rx pin conflicted with ws2812 LED signal pin
 
 This software is desined for a serial of boards equipment with DU1906 DSP, such as:
 - `CUPID board`
