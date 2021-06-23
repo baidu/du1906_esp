@@ -29,9 +29,15 @@ typedef bdsc_asr_params_t* (*wrapper_func_t)(char *sn,
 bdsc_asr_params_t *bdsc_asr_params_create_wrapper(
         wrapper_func_t func,
         char *sn,
-        uint16_t audio_rate, char *cuid, int backtrack_time,
+        uint16_t audio_rate, char *cuid, int backtrack_time, int voice_print,
         uint16_t pam_len, char *pam);
 
+/**
+ * @brief      Get bds engine params
+ */
+bdsc_engine_params_t *bdsc_engine_params_create_wrapper(
+    char *sn, char *app_name,
+    uint16_t pam_len, char *pam);
 /**
  * @brief Generate auth signature
  *

@@ -41,34 +41,23 @@
 #include "bdsc_engine.h"
 #include "bds_private.h"
 
+const char *TAG = "BDSC_CMD";
 void bdsc_start_asr(int back_time)
 {
-    char *_uuid;
-    char *pam_data;
-    int param_max_len = 4096;
-
-
-    _uuid = audio_malloc(BDSC_MAX_UUID_LEN);
-    AUDIO_MEM_CHECK("start_asr", _uuid, return);
-    bds_generate_uuid(_uuid);
-    pam_data = audio_malloc(param_max_len);
-    AUDIO_MEM_CHECK("start_asr", pam_data, {
-        free(_uuid);
+    char sn[37] = {0};
+    bds_generate_uuid(sn);
+    char *pam_data = audio_calloc(1, 4096);
+    if(pam_data == NULL) {
+        ESP_LOGE(TAG, "audio_calloc fail!!!");
         return;
-    });
-    if (generate_asr_thirdparty_pam(pam_data, param_max_len, 0) < 0) {
-        free(_uuid);
+    }
+    if (generate_asr_thirdparty_pam(pam_data, 4096, 0) < 0) {
         free(pam_data);
         return;
     }
-    if (g_bdsc_engine->cuid[0] == '\0') {
-        free(_uuid);
-        free(pam_data);
-        ESP_LOGE("BDSC_CMD", "cuid is null ,should not be here");
-        return;
-    }
-    bdsc_asr_params_t *asr_params = bdsc_asr_params_create_wrapper(bdsc_asr_params_create, _uuid, 16000, g_bdsc_engine->cuid, back_time,
-                                                           strlen(pam_data) + 1, pam_data);
+    bdsc_asr_params_t *asr_params = bdsc_asr_params_create_wrapper(bdsc_asr_params_create, sn, 16000,\
+                                                            g_bdsc_engine->cuid, back_time,\
+                                                            0, strlen(pam_data) + 1, pam_data);
     bds_client_command_t asr_start = {
             .key = CMD_ASR_START,
             .content = asr_params,
@@ -76,9 +65,7 @@ void bdsc_start_asr(int back_time)
     };
     bds_client_send(g_bdsc_engine->g_client_handle, &asr_start);
     bdsc_asr_params_destroy(asr_params);
-
     free(pam_data);
-    free(_uuid);
 }
 
 void bdsc_stop_asr()
@@ -135,8 +122,6 @@ void bdsc_start_recorder()
     int type = RECORDER_TYPE_PCM0;
     bds_client_command_t command = {
             .key = CMD_RECORDER_START,
-            .content = &type,
-            .content_length = sizeof(RECORDER_TYPE_PCM0)
     };
     bds_client_send(g_bdsc_engine->g_client_handle, &command);
 }
@@ -146,8 +131,6 @@ void bdsc_stop_recorder()
     int type = RECORDER_TYPE_PCM0;
     bds_client_command_t recorder_stop = {
             .key = CMD_RECORDER_STOP,
-            .content = &type,
-            .content_length = sizeof(RECORDER_TYPE_PCM0)
     };
     bds_client_send(g_bdsc_engine->g_client_handle, &recorder_stop);
 }

@@ -68,6 +68,7 @@ typedef struct {
 
 void set_cloud_log_level(esp_log_level_t level);
 int app_cloud_log_task_init(cloud_log_cfg_t *cfg);
+bool app_cloud_log_task_check_inited();
 
 // channels
 int mqtt_channel_init(void);
@@ -80,5 +81,10 @@ int https_channel_init(void);
 int https_send_log(char *msg, uint32_t len);
 
 extern int g_cloud_log_ring_buf_sz;
+
+// global log level config
+esp_err_t uart_print_on();
+esp_err_t uart_print_off();
+esp_err_t cloud_print_on();
 
 #endif

@@ -18,9 +18,11 @@
 #include <string.h>
 #include "bdsc_json.h"
 #include <stdint.h>
+#include "app_music.h"
 
 #define SLOTS_MAX_NUM   4         //the slot max numbers in json data
 #define NO_CMP_STR      "the term is not compare"   //ignore this string in comparing
+
 typedef enum {
     VOICE_CTL_OPEN_BT,
     VOICE_CTL_CLOSE_BT,
@@ -34,7 +36,10 @@ typedef enum {
     VOICE_CTL_VOL_OFF,
     VOICE_CTL_VOL_MUTE,
     VOICE_CTL_URL_PALY,
+    VOICE_CTL_NOT_FOUND,
     VOICE_CTL_MUSIC_ID_PALY,
+    IAQ_QUERY,
+    UNKNOW_QUERY,     //it is used to handle unknow query
 } voice_ctr_cmd_t;    /*the voice control CODE ID*/
 
 typedef struct {
@@ -50,11 +55,11 @@ typedef struct {
 typedef void (*cmd_handle_func)(const void *pdata, uint32_t code);
 typedef struct _unit_data {
     const uint32_t  unit_code;    //code
-    const char      *intent;      //intend of json
-    const char      *origin;      //origin of json
-    const char      *action_type; //action_type of json
-    custom_reply_t  custom_reply; //reply of json
-    uint8_t         slots_num;    //slot nember
+    const char      *intent;      //intend
+    const char      *origin;      //origin
+    const char      *action_type;  //action_type
+    custom_reply_t  custom_reply; //custom reply
+    uint8_t         slots_num;    //slot number
     slots_key_value_t slots_key_value[SLOTS_MAX_NUM];   //slot array
 } unit_data_t;
 

@@ -22,14 +22,6 @@ extern "C" {
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#define BYTE1  __attribute__((packed, aligned(1)))
-
-// Define interface return value.
-#define RET_OK                                   0
-#define RET_BAD_PARAM                           -1
-#define RET_BAD_STATE                           -2
-#define RET_BAD_OPERATE                         -3
-#define RET_UNHANDLED                           -4
 
 // Define interface error code.
 #define ERROR_BDSC_INVALID_RESOURCE             -1000
@@ -52,37 +44,26 @@ extern "C" {
 #define ERROR_BDSC_LINK_START_INVALID           -6000
 #define ERROR_BDSC_LINK_STOP_INVALID            -6001
 #define ERROR_BDSC_LINK_CONNECT_FAILED          -6002
-#define ERROR_BDSC_LINK_IO_BREAK                -6003
-#define ERROR_BDSC_LINK_RESPONSE_TIMEOUT        -6004
-#define ERROR_BDSC_LINK_FINISH_TIMEOUT          -6005
-#define ERROR_BDSC_MIC_SIGNAL_AM_ALL_ZERO       -7000
-#define ERROR_BDSC_MIC_SIGNAL_AM_CLIPPING       -7001
-#define ERROR_BDSC_MIC_SIGNAL_UNIFORM           -7002
-#define ERROR_BDSC_MIC_SIGNAL_INCONSISTENCY     -7003
 #define ERROR_BDSC_DSP_RUNTIME_ERROR            -7004
-#define ERROR_BDSC_TTS_START_FAILED             -8000
-#define ERROR_BDSC_TTS_CANCEL_FAILED            -8001
-#define ERROR_BDSC_TTS_NET_ERROR                -8002
-#define ERROR_BDSC_TTS_RESPONSE_TIMEOUT         -8003
+#define ERROR_BDSC_DSP_LOAD_FLASH               -8000
+#define ERROR_BDSC_DSP_LOAD_TRANSPORT           -8001
+#define ERROR_BDSC_DSP_LOAD_MD5                 -8002
+#define ERROR_BDSC_DSP_LOAD_SETUP               -8003
+#define ERROR_BDSC_DSP_LOAD_UNKNOWN             -8004
 
 #define SN_LENGTH                               37
 #define KEY_LENGTH                              32
 #define CUID_LENGTH                             37
-#define UUID_LENGTH                             37
-#define APP_LENGTH                              64
-#define WAKEUP_WORDS_LENGTH                     32
-#define URI_LENGTH                              128
-#define SCHEME_LENGTH                           5
 #define HOST_LENGTH                             64
-#define PORT_LENGTH                             5
-#define PATH_LENGTH                             64
-#define PARAM_LENGTH                            64
+#define APP_LENGTH                              64
+#define WP_WORDS_LENGTH                         32
 
 #define FLAG_DEFAULT                            0
 #define FLAG_TAIL                               1
 
 #define KEY_ASR_MODE_STATE                      "asr_mode_state"
-#define KEY_WS_HEAD_HOST                        "head_host"
+#define KEY_NQE_MODE                            "nqe_mode"
+#define KEY_LC_HOST                             "lc_host"
 #define KEY_SELF_WAKEUP_RESTRAIN                "self_wakeup_restrain"
 #define KEY_IDX                                 "idx"
 #define KEY_TTS_HOLD_WAKE                       "tts_hold_wake"
@@ -94,36 +75,10 @@ extern "C" {
 #define KEY_SADDR                               "saddr"
 #define KEY_LENGTH_STR                          "length"
 #define KEY_NIGHT_MODE                          "night_mode"
-#define KEY_DBG_FIRST_WP                        "dbg_first_wp"   
-#define KEY_DBG_AUDIO_SPEED                     "dbg_audio_speed"
-
-#define KEY_HOST                                "host"
-#define KEY_PORT                                "port"
-#define KEY_CUID                                "cuid"
-#define KEY_PID                                 "pid"
-#define KEY_KEY                                 "key"
-#define KEY_ENGINE_URI                          "engine_uri"
-#define KEY_NET_LOG_LEVEL                       "qnet_log_level"
-#define KEY_WAKEUP_WORDS                        "wakeup_words"
-#define KEY_PDT                                 "pdt"
-#define KEY_APPID                               "appid"
-#define KEY_APPKEY                              "appkey"
-#define KEY_SN                                  "sn"
-#define KEY_TEX                                 "tex"
-#define KEY_SPD                                 "spd"
-#define KEY_PIT                                 "pit"
-#define KEY_VOL                                 "vol"
-#define KEY_PER                                 "per"
-#define KEY_AUE                                 "aue"
-#define KEY_RATE                                "rate"
-#define KEY_XML                                 "xml"
-#define KEY_PATH                                "path"
-#define KEY_LAN                                 "lan"
-#define KEY_MODE                                "mode"
-#define KEY_PAM                                 "pam"
-
+#define KEY_DBG_FIRST_WP                        "dbg_first_wp"
+#define KEY_10S_SUPPORT                         "10s_support"
+#define KEY_DBG_10S_PERIOD_S                    "dbg_10s_period"
 typedef struct {
-    char sn[SN_LENGTH];
     int32_t flag;
     uint16_t buffer_length;
     uint16_t real_length;
@@ -145,11 +100,18 @@ typedef struct {
 typedef struct {
 
 } bds_client_context_t;
-
-typedef struct bds_sn {
-    char sn[SN_LENGTH];
-}BYTE1 bds_sn_t;
-
+#define MIC_ENERGY_COUNT 8
+#define MAX_MIC_NUM      6
+typedef struct __attribute__((packed)) Detect_Result {
+    unsigned mic_detect_status;
+    float result_mic_energy_mean;
+    float result_mic_energy_std;
+    float result_mic_energy_max;
+    float result_mic_energy[MIC_ENERGY_COUNT];
+    float result_inconsistent_mean[MAX_MIC_NUM];
+    float result_inconsistent_std[MAX_MIC_NUM];
+    float result_inconsistent_ratio[MAX_MIC_NUM * MIC_ENERGY_COUNT];
+} Detect_Result;
 /**
  * @brief      Create bdsc audio data type
  *
@@ -161,8 +123,7 @@ typedef struct bds_sn {
  *     - `bdsc_audio_t`
  *     - NULL if any errors
  */
-bdsc_audio_t* bdsc_audio_create(char* sn, int32_t flag, uint16_t buffer_length, const uint8_t *buffer);
-
+bdsc_audio_t* bdsc_audio_create(int32_t flag, uint16_t buffer_length, const uint8_t *buffer);
 /**
  * @brief      Destroy bdsc audio data type
  *

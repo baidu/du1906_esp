@@ -239,18 +239,18 @@ const struct periph_ws2812_ctrl_cfg ws2812_display_pattern[DISPLAY_PATTERN_MAX][
     },
     {
         {
-            .mode = PERIPH_WS2812_ONE,
+            .mode = PERIPH_WS2812_BLINK,
             .color = LED2812_COLOR_GREEN,
-            .loop = 0,
-            .time_off_ms = 0,
-            .time_on_ms = 0,
+            .loop = 1,
+            .time_off_ms = 200,
+            .time_on_ms = 400,
         },
         {
-            .mode = PERIPH_WS2812_ONE,
+            .mode = PERIPH_WS2812_BLINK,
             .color = LED2812_COLOR_GREEN,
-            .loop = 0,
-            .time_off_ms = 0,
-            .time_on_ms = 0,
+            .loop = 1,
+            .time_off_ms = 200,
+            .time_on_ms = 400,
         } // 13
     },
     {

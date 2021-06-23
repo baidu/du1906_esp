@@ -40,6 +40,10 @@
 #include "esp_system.h"
 #include "esp_http_client.h"
 #include <strings.h>
+#include "audio_tone_uri.h"
+#include "audio_player_pipeline_int_tone.h"
+#include "bdsc_tools.h"
+#include "bdsc_engine.h"
 
 static const char *TAG = "HTTP_STREAM";
 #define MAX_PLAYLIST_LINE_SIZE (512)
@@ -322,6 +326,91 @@ static char *_playlist_get_next_track(audio_element_handle_t self)
     return NULL;
 }
 
+int generate_active_tts_pam(char* tts_text, char* pam_prama, size_t max_len);
+#define POST_BUFF_LEN 4096
+int active_tts_process(char *tts_text, audio_element_handle_t self, audio_element_info_t info)
+{
+    http_stream_t *http = (http_stream_t *)audio_element_getdata(self);
+    int err = -1;
+    char *post_data = audio_calloc(1, POST_BUFF_LEN);
+    if(post_data == NULL) {
+        ESP_LOGE(TAG, "%s|%d: malloc fail", __func__, __LINE__);
+        return ESP_FAIL;
+    }
+    esp_http_client_config_t http_cfg = {
+        .url = "https://smarthome.baidubce.com/v1/service/ttsStream",
+        .event_handler = _http_event_handle,
+        .user_data = self,
+        .timeout_ms = 30 * 1000,
+        .buffer_size = HTTP_STREAM_BUFFER_SIZE,
+        .method = HTTP_METHOD_POST,
+    };
+    http->client = esp_http_client_init(&http_cfg);
+    AUDIO_MEM_CHECK(TAG, http->client, return ESP_ERR_NO_MEM);
+
+    esp_http_client_set_header(http->client, "Content-Type", "application/json");
+    generate_active_tts_pam(tts_text, post_data, POST_BUFF_LEN);
+    esp_http_client_set_post_field(http->client, post_data, POST_BUFF_LEN);
+
+    char *buffer = NULL;
+    int post_len = esp_http_client_get_post_field(http->client, &buffer);
+_stream_redirect:
+    if ((err = esp_http_client_open(http->client, post_len)) != ESP_OK) {
+        ERR_OUT(ERR_RET, "Failed to open http stream");
+    }
+
+    if (post_len && buffer) {
+        if (esp_http_client_write(http->client, buffer, post_len) <= 0) {
+            ESP_LOGE(TAG, "Failed to write data to http stream");
+            return ESP_FAIL;
+        }
+        ESP_LOGD(TAG, "len=%d, data=%s", post_len, buffer);
+    }
+
+    /*
+    * Due to the total byte of content has been changed after seek, set info.total_bytes at beginning only.
+    */
+    int64_t cur_pos = esp_http_client_fetch_headers(http->client);
+    if (cur_pos < 0) {
+        err = ESP_FAIL;
+        ERR_OUT(ERR_RET, "fetch_headers fail");
+    }
+    audio_element_getinfo(self, &info);
+    if (info.byte_pos <= 0) {
+        info.total_bytes = cur_pos;
+    }
+
+    ESP_LOGI(TAG, "total_bytes=%d", (int)info.total_bytes);
+    int status_code = esp_http_client_get_status_code(http->client);
+    if (status_code == 301 || status_code == 302) {
+        esp_http_client_set_redirection(http->client);
+        goto _stream_redirect;
+    }
+    if (status_code != 200
+        && (esp_http_client_get_status_code(http->client) != 206)) {
+        ESP_LOGE(TAG, "Invalid HTTP stream, status code = %d", status_code);
+        return ESP_FAIL;
+    }
+
+    /**
+     * `audio_element_setinfo` is risky affair.
+     * It overwrites URI pointer as well. Pay attention to that!
+     */
+    audio_element_set_total_bytes(self, info.total_bytes);
+
+    http->is_open = true;
+    audio_element_report_codec_fmt(self);
+
+    ESP_LOGI(TAG, "===================== _http_open end =====================");
+    audio_free(post_data);
+    return ESP_OK;
+
+ERR_RET:
+    audio_player_tone_play(tone_uri[TONE_TYPE_UNSTEADY], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
+    audio_free(post_data);
+    return err;
+}
+
 static esp_err_t _http_open(audio_element_handle_t self)
 {
     ESP_LOGI(TAG, "===================== _http_open begin =====================");
@@ -356,6 +445,9 @@ _stream_open_begin:
     }
     audio_element_getinfo(self, &info);
     ESP_LOGD(TAG, "URI=%s", uri);
+    if (!strncmp(uri, ACTIVE_TTS_PREFIX, strlen(ACTIVE_TTS_PREFIX))) {
+        return active_tts_process(uri + strlen(ACTIVE_TTS_PREFIX), self, info);
+    }
     // if not initialize http client, initial it
     if (http->client == NULL) {
         esp_http_client_config_t http_cfg = {
@@ -395,8 +487,7 @@ _stream_open_begin:
     int post_len = esp_http_client_get_post_field(http->client, &buffer);
 _stream_redirect:
     if ((err = esp_http_client_open(http->client, post_len)) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to open http stream");
-        return err;
+        ERR_OUT(ERR_RET, "Failed to open http stream");
     }
 
     int wrlen = dispatch_hook(self, HTTP_STREAM_ON_REQUEST, buffer, post_len);
@@ -421,6 +512,10 @@ _stream_redirect:
     * Due to the total byte of content has been changed after seek, set info.total_bytes at beginning only.
     */
     int64_t cur_pos = esp_http_client_fetch_headers(http->client);
+    if (cur_pos < 0) {
+        err = ESP_FAIL;
+        ERR_OUT(ERR_RET, "fetch_headers fail");
+    }
     audio_element_getinfo(self, &info);
     if (info.byte_pos <= 0) {
         info.total_bytes = cur_pos;
@@ -470,6 +565,10 @@ _stream_redirect:
 
     ESP_LOGI(TAG, "===================== _http_open end =====================");
     return ESP_OK;
+
+ERR_RET:
+    audio_player_tone_play(tone_uri[TONE_TYPE_UNSTEADY], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
+    return err;
 }
 
 static esp_err_t _http_close(audio_element_handle_t self)

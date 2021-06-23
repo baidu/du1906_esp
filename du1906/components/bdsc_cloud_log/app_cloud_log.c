@@ -13,6 +13,7 @@
 */
 #include "app_cloud_log.h"
 #include "app_task_register.h"
+#include "bds_common_utility.h"
 
 #define TAG "cloud_LOG_TASK"
 
@@ -40,7 +41,9 @@ void set_cloud_log_level(esp_log_level_t level)
         ESP_LOGE(TAG, "set_cloud_log_level fail,set level value=%d", level);  
     // if(level > 0)
     //     level = level - 1;   //sync level with sdk
+    if (pCloud_log_data) {
         pCloud_log_data->cloud_local_level = level;
+    }
 }
 
 void cloud_log_vprintf(esp_log_level_t level,const char *fmt, va_list ap)
@@ -252,4 +255,73 @@ int app_cloud_log_task_init(cloud_log_cfg_t *p_cfg)
     }
     esp_core_dump_get_nvs_data(&last_coredump_buff);
     return 0;
+}
+
+bool app_cloud_log_task_check_inited()
+{
+    if (pCloud_log_data) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+static void print_on_config()
+{
+    esp_log_level_set("*", ESP_LOG_INFO);
+
+    //esp_log_level_set("spi_master", ESP_LOG_WARN);
+    //esp_log_level_set("wakeup_hal", ESP_LOG_WARN);
+    //esp_log_level_set("A2DP_STREAM", ESP_LOG_INFO);
+
+    /* 2020.9.27 enable sdk & audio debug log level */
+    //bds_set_log_level(3);  //sdk log level: 0:E  1:W  2:I 3:D 4:V
+
+    esp_log_level_set("AUDIO_ELEMENT", ESP_LOG_NONE);
+    esp_log_level_set("AUDIO_PIPELINE", ESP_LOG_NONE);
+    esp_log_level_set("HTTP_STREAM", ESP_LOG_INFO);
+    esp_log_level_set("ESP_AUDIO_CTRL", ESP_LOG_NONE);
+    esp_log_level_set("ESP_AUDIO_TASK", ESP_LOG_NONE);
+    esp_log_level_set("AUDIO_MANAGER", ESP_LOG_DEBUG);
+    esp_log_level_set("esp-tls", ESP_LOG_DEBUG);
+    //esp_log_level_set("HTTP_STREAM", ESP_LOG_DEBUG);
+    //esp_log_level_set("HTTP_CLIENT", ESP_LOG_DEBUG);
+}
+
+static void print_off_config()
+{
+    //esp_log_level_set("*", ESP_LOG_NONE);
+    esp_log_level_set("*", ESP_LOG_WARN);    // for sending log to cloud server
+    esp_log_level_set("ESP_AUDIO_TASK", ESP_LOG_DEBUG);
+    esp_log_level_set("SYS_STATE", ESP_LOG_DEBUG);
+    bds_set_log_level(3);
+}
+
+esp_err_t uart_print_on()
+{
+    ESP_LOGE(TAG, "uart print on.");
+    esp_log_set_vprintf(&vprintf);   //open uart
+    print_on_config();
+    return ESP_OK;
+}
+
+static void close_log_printf(const char *fmt, va_list ap)
+{
+    //nothing done
+}
+
+esp_err_t uart_print_off()
+{
+    ESP_LOGI(TAG, "uart print off.");
+    esp_log_set_vprintf(close_log_printf);   //close uart
+    print_off_config();
+    return ESP_OK;
+}
+
+esp_err_t cloud_print_on()
+{
+    ESP_LOGI(TAG, "cloud print on.");
+    esp_log_set_vprintf(close_log_printf);   //close uart
+    print_on_config();
+    return ESP_OK;
 }

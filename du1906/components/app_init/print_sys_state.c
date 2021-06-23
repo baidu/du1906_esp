@@ -133,7 +133,7 @@ esp_err_t esp_print_real_time_stats(TickType_t xTicksToWait)
         }
     }
     
-    heap_caps_print_heap_info(MALLOC_CAP_DEFAULT);
+    //heap_caps_print_heap_info(MALLOC_CAP_DEFAULT);
     ret = ESP_OK;
 
 exit:    //Common return path

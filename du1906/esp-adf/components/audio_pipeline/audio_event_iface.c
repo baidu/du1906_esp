@@ -109,7 +109,6 @@ static esp_err_t audio_event_iface_cleanup_listener(audio_event_iface_handle_t l
         while (listen->queue_set && (xQueueRemoveFromSet(item->queue, listen->queue_set) != pdPASS)) {
             ESP_LOGE(TAG, "Error remove listener,%p", item->queue);
             while (audio_event_iface_read(listen, &dummy, 0) == ESP_OK);
-            return ESP_FAIL;
         }
     }
     if (listen->queue_set) {
@@ -254,7 +253,7 @@ esp_err_t audio_event_iface_waiting_cmd_msg(audio_event_iface_handle_t evt)
 esp_err_t audio_event_iface_cmd(audio_event_iface_handle_t evt, audio_event_iface_msg_t *msg)
 {
     if (evt->internal_queue && (xQueueSend(evt->internal_queue, (void *)msg, 0) != pdPASS)) {
-        ESP_LOGW(TAG, "There are no space to dispatch queue");
+        ESP_LOGW(TAG, "There are no space to dispatch queue(free %d)", uxQueueSpacesAvailable(evt->internal_queue));
         return ESP_FAIL;
     }
     return ESP_OK;
@@ -263,6 +262,7 @@ esp_err_t audio_event_iface_cmd(audio_event_iface_handle_t evt, audio_event_ifac
 esp_err_t audio_event_iface_cmd_from_isr(audio_event_iface_handle_t evt, audio_event_iface_msg_t *msg)
 {
     if (evt->internal_queue && (xQueueSendFromISR(evt->internal_queue, (void *)msg, 0) != pdPASS)) {
+        ESP_LOGW(TAG, "queue send failed(free %d)", uxQueueSpacesAvailable(evt->internal_queue));
         return ESP_FAIL;
     }
     return ESP_OK;
@@ -272,7 +272,7 @@ esp_err_t audio_event_iface_sendout(audio_event_iface_handle_t evt, audio_event_
 {
     if (evt->external_queue) {
         if (xQueueSend(evt->external_queue, (void *)msg, 0) != pdPASS) {
-            ESP_LOGW(TAG, "There is no space in external queue");
+            ESP_LOGW(TAG, "There is no space in external queue(free %d)", uxQueueSpacesAvailable(evt->external_queue));
             return ESP_FAIL;
         }
     }

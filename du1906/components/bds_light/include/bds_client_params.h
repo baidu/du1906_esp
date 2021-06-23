@@ -69,7 +69,20 @@ typedef enum WAKEUP_NUM {
  * @brief   bds client params type 
  */
 typedef struct {
+    char sn[SN_LENGTH];
+    uint32_t pid;
+    char host[HOST_LENGTH];
+    int port;
+    uint8_t protocol;
+    char cuid[CUID_LENGTH];
+    char app[APP_LENGTH];
     LAUNCH_MODE_T launch_mode;
+    uint16_t pam_len;
+    char pam[];
+} bdsc_engine_params_t;
+
+typedef struct {
+    bdsc_engine_params_t *engine_params;
     int dsp_subtype;
 } bds_client_params_t;
 
@@ -104,6 +117,16 @@ typedef struct {
 typedef struct {
     int wakeup_num;
 } bdsc_wp_params_t;
+
+typedef struct __attribute__((packed)) Detect_Thld {
+    float thld_all_zeros;
+    float thld_inconsistent_mean;
+    float thld_sensitivity_mean;
+    float thld_recorr_mean;
+    int detect_flag_base;
+    int len;
+    float reserved[6];
+} Detect_Thld;
 /**
  * @brief      create bdsc asr params
  *
@@ -123,14 +146,14 @@ typedef struct {
  */
 bdsc_asr_params_t *bdsc_asr_params_create(char *sn,
         uint32_t primary_pid, uint32_t assist_pid, char *key,
-        uint16_t audio_rate, char *cuid, int wakeup_status,
+        uint16_t audio_rate, char *cuid, int backtrack_time, int voice_print,
         uint16_t pam_len, char *pam);
 
-bdsc_asr_params_t *bdsc_asr_params_create_ext(char *sn,
-        uint32_t primary_pid, uint32_t assist_pid, char *key,
-        uint16_t audio_rate, char *cuid, int wakeup_status,
-        uint16_t pam_len, char *pam, int voice_print);
-		
+bdsc_engine_params_t* bdsc_engine_params_create(char *sn, uint32_t pid, char *host, int port, uint8_t protocol,
+        char *cuid, char *app, LAUNCH_MODE_T launch_mode, uint16_t pam_len, char *pam);
+
+void bdsc_engine_params_destroy(bdsc_engine_params_t *params);
+
 /**
  * @brief      destroy bdsc asr params
  *

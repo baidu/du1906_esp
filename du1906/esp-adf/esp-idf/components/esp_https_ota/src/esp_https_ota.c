@@ -457,7 +457,7 @@ esp_err_t esp_https_ota_perform(esp_https_ota_handle_t https_ota_handle)
                     return ESP_FAIL;
                 }
                 ESP_LOGE(TAG, "++++++++ errno = %d ++++++++++", client_errno);
-                if ((client_errno == 0 || client_errno == ENOTCONN || client_errno == ECONNRESET || client_errno == ECONNABORTED || client_errno == EAGAIN) && !is_recv_complete) {
+                if ((client_errno == 0 || client_errno == ENOTCONN || client_errno == ECONNRESET || client_errno == ECONNABORTED || client_errno == EAGAIN || client_errno == ETIMEDOUT) && !is_recv_complete) {
                     ESP_LOGE(TAG, "Connection closed, client_errno = %d", client_errno);
                     if (_http_reconnect_loop(https_ota_handle) == ESP_FAIL) {
                         ESP_LOGE(TAG, "Failed to establish HTTP connection");

@@ -1,6 +1,7 @@
 #include "cupid_device_manager.h"
 #include "board.h"
 #include "audio_mem.h"
+#include "audio_player.h"
 #include "bdsc_tools.h"
 #include "app_ota_upgrade.h"
 #include "app_cloud_log.h"
@@ -186,6 +187,12 @@ int cupid_device_manager_feed_data(cupid_device_manager_t *dm,
                         // set silent flag
                         if (!strcmp(typeJ->valuestring, CUPID_DM_DOWN_CMD_OTA_S)) {
                             g_bdsc_engine->silent_mode = 1;
+                        }
+                        // shut down player
+                        audio_player_state_t st = {0};
+                        audio_player_state_get(&st);
+                        if (((int)st.status == AUDIO_STATUS_RUNNING)) {
+                            audio_player_stop();
                         }
                         // start ota thread, mqtt cb can not block
                         bdsc_start_ota_thread(ota_urlJ->valuestring);

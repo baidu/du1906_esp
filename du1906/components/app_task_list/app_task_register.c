@@ -50,11 +50,12 @@ task_entry_t g_registed_task_list[] = {
      * "app_music_task" and "next_music_task" must in different core
      * beacause it's going to pause 1&2 second when play url music, so request next song task run core 1, play task run core 0
      */
-    {APP_TASK_ID_APP_MUSIC,     "app_music_task",   CORE0,         (1024 * 6),      NULL,       1,         NULL},
-    {APP_TASK_ID_NEXT_MUSIC,    "next_music_task",  CORE1,         (1024 * 4),      NULL,       1,         NULL},
-    {APP_TASK_ID_UPLOAD_INFO,   "upload_info_task", CORE1,         (1024 * 4),      NULL,       1,         NULL},
+    {APP_TASK_ID_APP_MUSIC,     "app_music_task",     CORE0,       (1024 * 6),      NULL,       1,         NULL},
+    {APP_TASK_ID_NEXT_MUSIC,    "next_music_task",    CORE1,       (1024 * 8),      NULL,       1,         NULL},
+    {APP_TASK_ID_UPLOAD_INFO,   "upload_info_task",   CORE1,       (1024 * 4),      NULL,       1,         NULL},
+    {APP_TASK_ID_GET_URL,       "get_url_by_id_task", CORE1,       (1024 * 8),      NULL,       1,         NULL},
 
-    {APP_TASK_ID_IOT_MQTT,      "iot_mqtt",         CORE1,         (1024 * 4),      NULL,       10,        NULL},
+    {APP_TASK_ID_IOT_MQTT,      "iot_mqtt",           CORE1,       (1024 * 4),      NULL,       10,        NULL},
     {APP_TASK_ID_CLOUD_LOG,     "app_cloud_log_task", CORE0,       (1024 * 10),     NULL,       1,         NULL},
     {APP_TASK_ID_AUDIO_MANAGER, "audio_manager_task", CORE0,       (1024 * 3),      NULL,       13,         NULL},
     {APP_TASK_ID_OTA_MONITOR,   "ota_monitor_task",   CORE1,       (1024 * 3),      NULL,       1,         NULL},
@@ -64,7 +65,7 @@ task_entry_t g_registed_task_list[] = {
      */
     {APP_TASK_ID_WK,            "wk_task",            CORE0,       (1024 * 4),      NULL,       13,         NULL},
     {APP_TASK_ID_SOP,           "sop_task",           CORE0,       (1024 * 4),      NULL,       13,         NULL},
-    {APP_TASK_ID_BDSC_ENGINE,   "engine_task",        CORE0,       (1024 * 4),      NULL,       10,         NULL},
+    {APP_TASK_ID_BDSC_ENGINE,   "engine_task",        CORE0,       (1024 * 8),      NULL,       10,         NULL},
     {APP_TASK_ID_DSP_FATAL_ERROR, "dsp_fatal",      NO_AFFINITY,    (1024 * 4),     NULL,       10,         NULL},
 };
 

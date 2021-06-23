@@ -61,50 +61,60 @@ static cJSON* build_bdsc_methods(int option)
     return a;
 }
 
-int generate_asr_thirdparty_pam(char* pam_prama, size_t max_len, int option)
+static int _generate_common_pam_data(cJSON **pam_json, bool is_time_str)
 {
-    ESP_LOGI(TAG, "==> generate_asr_thirdparty_pam\n");
-    cJSON *pam_json, *methodJ;
+    const char *sig = NULL;
     char ts_str[12];
-    const char *sig;
-    int ts;
-    //const char *methods[3] = {"ASR", "UNIT", "TTS"};
-    char *pam_string;
+    int ts = 0;
     vendor_info_t *g_vendor_info = g_bdsc_engine->g_vendor_info;
-
-    if (!(pam_json = cJSON_CreateObject())) {
-        return -1;
-    }
     if (!g_vendor_info) {
-        cJSON_Delete(pam_json);
         return -1;
     }
-    cJSON_AddStringToObject(pam_json, "fc", g_vendor_info->fc);
-    cJSON_AddStringToObject(pam_json, "pk", g_vendor_info->pk);
-    cJSON_AddStringToObject(pam_json, "ak", g_vendor_info->ak);
-    cJSON_AddBoolToObject(pam_json, "optimize", true); // mixed play flag
-    cJSON_AddNumberToObject(pam_json, "aue", 3);       // 3：mp3， default is 0 (pcm)
-    cJSON_AddNumberToObject(pam_json, "rate", 4);      // bitrate, 4: for mp3
+    if (!(*pam_json = cJSON_CreateObject())) {
+        return -1;
+    }
+    cJSON_AddStringToObject(*pam_json, "fc", g_vendor_info->fc);
+    cJSON_AddStringToObject(*pam_json, "pk", g_vendor_info->pk);
+    cJSON_AddStringToObject(*pam_json, "ak", g_vendor_info->ak);
 
     if ((ts = get_current_valid_ts()) < 0) {
         ts = 0; // or return?
     }
-
     ts = ts / 60;
-    itoa(ts, ts_str, 10);
-    cJSON_AddStringToObject(pam_json, "time_stamp", ts_str);
+    if(is_time_str) {
+        itoa(ts, ts_str, 10);
+        cJSON_AddStringToObject(*pam_json, "time_stamp", ts_str);
+    } else {
+        cJSON_AddNumberToObject(*pam_json, "time_stamp", ts);    
+    }
+
+    if (!(sig = generate_auth_sig_needfree(g_vendor_info->ak, ts, g_vendor_info->sk))) {
+        ESP_LOGE(TAG, "generate_auth_sig_needfree fail");
+        cJSON_Delete(*pam_json);
+        return -1;
+    }
+    cJSON_AddStringToObject(*pam_json, "signature", sig);
+    free((void*)sig);
+    return 0;
+}
+
+int generate_asr_thirdparty_pam(char* pam_prama, size_t max_len, int option)
+{
+    ESP_LOGI(TAG, "==> generate_asr_thirdparty_pam\n");
+    cJSON *pam_json = NULL, *methodJ = NULL;
+    char *pam_string = NULL;
+    vendor_info_t *g_vendor_info = g_bdsc_engine->g_vendor_info;
+
+    if(_generate_common_pam_data(&pam_json, 1)) {
+        return -1;
+    }
+    cJSON_AddBoolToObject(pam_json, "optimize", true); // mixed play flag
+    cJSON_AddNumberToObject(pam_json, "aue", 3);       // 3：mp3， default is 0 (pcm)
+    cJSON_AddNumberToObject(pam_json, "rate", 4);      // bitrate, 4: for mp3
 
     //methodJ = cJSON_CreateStringArray(methods, 3);
     methodJ = build_bdsc_methods(option);
     cJSON_AddItemToObject(pam_json, "methods", methodJ);
-
-    if (!(sig = generate_auth_sig_needfree(g_vendor_info->ak, ts, g_vendor_info->sk))) {
-        ESP_LOGE(TAG, "generate_auth_sig_needfree fail");
-        cJSON_Delete(pam_json);
-        return -1;
-    }
-    cJSON_AddStringToObject(pam_json, "signature", sig);
-    free((void*)sig);
 
     if (!(pam_string = cJSON_PrintUnformatted(pam_json))) {
         ESP_LOGE(TAG, "cJSON_PrintUnformatted fail");
@@ -124,41 +134,42 @@ int generate_asr_thirdparty_pam(char* pam_prama, size_t max_len, int option)
     return 0;
 }
 
-
 int generate_auth_pam(char* pam_prama, size_t max_len)
 {
     ESP_LOGI(TAG, "==> generate_auth_pam\n");
-    cJSON *pam_json;
-    const char *sig;
-    int ts;
-    char *pam_string;
-    vendor_info_t *g_vendor_info = g_bdsc_engine->g_vendor_info;
+    cJSON *pam_json = NULL;
+    char *pam_string = NULL;
 
-    if (!(pam_json = cJSON_CreateObject())) {
+    if(_generate_common_pam_data(&pam_json, 0)) {
         return -1;
     }
-    if (!g_vendor_info) {
+    if (!(pam_string = cJSON_PrintUnformatted(pam_json))) {
+        ESP_LOGE(TAG, "cJSON_PrintUnformatted fail");
         cJSON_Delete(pam_json);
         return -1;
     }
-    cJSON_AddStringToObject(pam_json, "fc", g_vendor_info->fc);
-    cJSON_AddStringToObject(pam_json, "pk", g_vendor_info->pk);
-    cJSON_AddStringToObject(pam_json, "ak", g_vendor_info->ak);
-
-    if ((ts = get_current_valid_ts()) < 0) {
-        ts = 0; // or return?
-    }
-
-    ts = ts / 60;
-    cJSON_AddNumberToObject(pam_json, "time_stamp", ts);
-
-    if (!(sig = generate_auth_sig_needfree(g_vendor_info->ak, ts, g_vendor_info->sk))) {
-        ESP_LOGE(TAG, "generate_auth_sig_needfree fail");
-        cJSON_Delete(pam_json);
+    cJSON_Delete(pam_json);
+    if (strlen(pam_string) >= max_len) {
+        free((void*)pam_string);
+        ESP_LOGE(TAG, "sig too long");
         return -1;
     }
-    cJSON_AddStringToObject(pam_json, "signature", sig);
-    free((void*)sig);
+
+    memcpy(pam_prama, pam_string, strlen(pam_string) + 1);
+    ESP_LOGI(TAG, "pam_string: %s\n", pam_string);
+    free((void*)pam_string);
+    return 0;
+}
+
+int generate_active_tts_pam(char* tts_text, char* pam_prama, size_t max_len)
+{
+    ESP_LOGI(TAG, "==> generate_active_tts_pam\n");
+    cJSON *pam_json = NULL;
+    char *pam_string = NULL;
+    if(_generate_common_pam_data(&pam_json, 0)) {
+        return -1;
+    }
+    cJSON_AddStringToObject(pam_json, "text", tts_text);
 
     if (!(pam_string = cJSON_PrintUnformatted(pam_json))) {
         ESP_LOGE(TAG, "cJSON_PrintUnformatted fail");

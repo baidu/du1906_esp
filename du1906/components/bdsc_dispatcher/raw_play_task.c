@@ -65,9 +65,13 @@ void handle_play_cmd(int cmd, uint8_t *buffer, size_t len)
             break;
         case CMD_HTTP_PLAY_START:
             ESP_LOGW(TAG, "==> CMD_HTTP_PLAY_START");
+            if (g_bdsc_engine->in_ota_process_flag) {
+                ESP_LOGE(TAG, "in ota process, skip http play");
+                break;
+            }
             ret = audio_player_music_play((const char *)buffer, 0, MEDIA_SRC_TYPE_MUSIC_HTTP);
             if (ret != ESP_OK && ret != ESP_ERR_AUDIO_STOP_BY_USER) {
-                audio_player_tone_play(tone_uri[TONE_TYPE_UNSTEADY], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
+                //audio_player_tone_play(tone_uri[TONE_TYPE_UNSTEADY], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
             }
             break;
         case CMD_A2DP_PLAY_START:

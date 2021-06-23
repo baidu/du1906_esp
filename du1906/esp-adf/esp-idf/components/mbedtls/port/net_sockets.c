@@ -405,10 +405,14 @@ int mbedtls_net_recv_timeout( void *ctx, unsigned char *buf, size_t len,
 
     /* Zero fds ready means we timed out */
     if ( ret == 0 ) {
+        printf("xxxx select timeout1 xxxx\n");
+        ((mbedtls_net_context *) ctx)->err_num = ETIMEDOUT;
         return ( MBEDTLS_ERR_SSL_TIMEOUT );
     }
 
     if ( ret < 0 ) {
+        printf("xxxx select timeout2 xxxx\n");
+        ((mbedtls_net_context *) ctx)->err_num = ETIMEDOUT;
         if ( errno == EINTR ) {
             return ( MBEDTLS_ERR_SSL_WANT_READ );
         }

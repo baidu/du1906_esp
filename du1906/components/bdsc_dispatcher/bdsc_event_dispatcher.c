@@ -49,23 +49,14 @@
 #include "audio_thread.h"
 #include "bdsc_ota_partitions.h"
 #include "app_task_register.h"
+#include "app_music.h"
+#include "play_list.h"
 
 #define TAG "=========="
 
 #define EVENT_ENGINE_QUEUE_LEN  256
 #define DEFAULT_WAKEUP_BACKTIME 200
-#define ENGINE_TASK_STACK_SZ    (1024 * 4)
-#define WAKEUP_TASK_STACK_SZ    (1024 * 4)
-#define SOP_TASK_STACK_SZ       (1024 * 4)
-
-#define MIGU_ORIGIN "1079888"
-#define HIMALAYA_ORIGIN "1030970"
-#define HIMALAYA_OLD_ORIGIN "1030330"     //delete it later,but use it now
-#define QING_ORIGIN  "1059717"
-
 extern display_service_handle_t g_disp_serv;
-bool g_pre_player_need_resume = false;
-static bool stop_play = false;
 
 typedef struct _engine_elem_t {
     int     event;
@@ -73,6 +64,12 @@ typedef struct _engine_elem_t {
     size_t  data_len;
 } engine_elem_t;
 
+typedef struct _tts_pkg_t {
+    uint16_t  json_len;
+    uint8_t   *json_data;
+    uint32_t  raw_len;
+    uint8_t   *raw_data;
+} tts_pkg_t;
 static short covert_to_short(char *buffer)
 {
     short len = buffer[1] << 8;
@@ -107,123 +104,81 @@ static int parse_tts_header(tts_header_t *ret_header, char *begin, char *end)
     cJSON *err = cJSON_GetObjectItem(json, "err");
     cJSON *idx = cJSON_GetObjectItem(json, "idx");
 
-    ret_header->err = err->valueint;
-    ret_header->idx = idx->valueint;
+    ret_header->err = (err ? err->valueint : -1);
+    ret_header->idx = (idx ? idx->valueint : -1);
     cJSON_Delete(json);
     return 0;
 }
 
 /*
- *  | 2B | json data | 4B | raw mp3 data |
+ *  origin package: | 2B | json data | 4B | raw mp3 data |
+ *  if origin package over than 2048 byte,it will be Unpacked multiple mini packets
+ *  idx ：the index of mini package
+ *  if idx < 0, the end of mini package
  */
-int handle_tts_data(char* buffer, int length)
+int handle_tts_package_data(bdsc_event_data_t *tts_data)
 {
-    char* ptr = buffer;
-    short header_len = covert_to_short(ptr);
-    ptr += 2;
-
-    char* begin = ptr;
-    ptr += header_len;
-    char* end = ptr;
-
-    int binary_len = covert_to_int(ptr);
-    ptr += 4;
-
-    if (length - (ptr - buffer) != binary_len) {
-        ESP_LOGE(TAG, "tts binary_len check fail? %d %d %d", length, (ptr - buffer), binary_len);
-        //return -1;
+    static tts_header_t header = {0};
+    tts_pkg_t tts_pkg = {0};
+    if(tts_data->idx == 1 || tts_data->idx == -1) {   //first mini package
+        tts_pkg.json_len = covert_to_short((char*)tts_data->buffer);
+        tts_pkg.raw_len = tts_data->buffer_length - sizeof(tts_pkg.json_len)\
+                          - sizeof(tts_pkg.raw_len) - tts_pkg.json_len;
+        if (tts_pkg.raw_len < 0) {
+            ERR_OUT(ERROR_RAW, "raw length is invalid");
+        }
+        tts_pkg.json_data = (uint8_t*)tts_data->buffer + sizeof(tts_pkg.json_len);
+        tts_pkg.raw_data = (uint8_t*)tts_data->buffer + sizeof(tts_pkg.json_len)\
+                           + sizeof(tts_pkg.raw_len) + tts_pkg.json_len;
+        int ret = parse_tts_header(&header, (char *)tts_pkg.json_data, NULL);
+        if (ret) {
+            ERR_OUT(ERROR_JSON, "parse json fail");
+        }
+        if (header.err) {
+            ERR_OUT(ERROR_JSON, "tts stream error, err: %d", header.err);
+        }
+    } else {
+        tts_pkg.raw_data = (uint8_t*)tts_data->buffer;
+        tts_pkg.raw_len = tts_data->buffer_length;
     }
-
-    tts_header_t header;
-    int ret = parse_tts_header(&header, begin, end);
-    if (ret) {
-        return -1;
+    raw_data_t *raw = (raw_data_t*)audio_calloc(1, sizeof(raw_data_t));
+    raw->raw_data = (uint8_t*)audio_calloc(1, tts_pkg.raw_len);
+    memcpy(raw->raw_data, tts_pkg.raw_data, tts_pkg.raw_len);
+    raw->raw_data_len = tts_pkg.raw_len;
+    if((header.idx < 0) && (tts_data->idx < 0)) {
+        raw->is_end = true;
+    } else {
+        raw->is_end = false;
     }
-
-    if (header.err) {
-        ESP_LOGE(TAG, "tts stream error, err: %d", header.err);
-        return -1;
-    }
-
-    ESP_LOGI(TAG, "play... length %d.", binary_len);
-    handle_play_cmd(CMD_RAW_PLAY_FEED_DATA, (uint8_t *)ptr, binary_len);
-
+    send_music_queue(RAW_TTS_DATA, raw);
     return 0;
+
+ERROR_JSON:
+ERROR_RAW:
+    return -1;
 }
 
+extern bool g_app_music_init_finish_flag;
+void play_tone_by_id(bdsc_hint_type_t id);
 void bdsc_play_hint(bdsc_hint_type_t type)
 {
+    bdsc_hint_type_t *tone_id = NULL;
+
     if (g_bdsc_engine->silent_mode) {
         ESP_LOGI(TAG, "in silent mode, skip play");
         return;
     }
-    int ret;
-    switch (type) {
-        case BDSC_HINT_BOOT:
-            audio_player_tone_play(tone_uri[TONE_TYPE_BOOT], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_SHUTDOWN:
-            audio_player_tone_play(tone_uri[TONE_TYPE_SHUT_DOWN], true, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_CONNECTED:
-            audio_player_tone_play(tone_uri[TONE_TYPE_LINKED], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_DISCONNECTED:
-            audio_player_tone_play(tone_uri[TONE_TYPE_UNLINKED], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_WAKEUP:
-            audio_player_tone_play(tone_uri[TONE_TYPE_WAKEUP], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_SC:
-            audio_player_tone_play(tone_uri[TONE_TYPE_SMART_CONFIG], true, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_NOT_FIND:
-            audio_player_tone_play(tone_uri[TONE_TYPE_NOT_FIND], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_OTA_START:
-            audio_player_tone_play(tone_uri[TONE_TYPE_OTA_START], true, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_OTA_COMPLETE:
-            audio_player_tone_play(tone_uri[TONE_TYPE_DOWNLOADED], true, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_OTA_FAIL:
-            audio_player_tone_play(tone_uri[TONE_TYPE_OTA_FAIL], true, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_BT_CONNECTED:
-            audio_player_tone_play(tone_uri[TONE_TYPE_BT_CONNECT], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_BT_DISCONNECTED:
-            audio_player_tone_play(tone_uri[TONE_TYPE_BT_DISCONNECT], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_OTA_ALREADY_NEWEST:
-            audio_player_tone_play(tone_uri[TONE_TYPE_ALREADY_NEW], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_OTA_BAD_NET_REPORT:
-            audio_player_tone_play(tone_uri[TONE_TYPE_BAD_NET_REPORT], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_DSP_LOAD_FAIL:
-            audio_player_tone_play(tone_uri[TONE_TYPE_DSP_LOAD_FAIL], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_GREET:
-#ifdef CONFIG_CUPID_BOARD_V2
-            audio_player_tone_play(tone_uri[TONE_TYPE_GREET], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-#else
-            audio_player_tone_play(tone_uri[TONE_TYPE_DUHOME_GREET], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-#endif
-            break;
-        case BDSC_HINT_WIFI_CONFIGUING:
-            audio_player_tone_play(tone_uri[TONE_TYPE_WIFI_CONFIGUING], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_WIFI_CONFIG_OK:
-            audio_player_tone_play(tone_uri[TONE_TYPE_WIFI_CONFIG_OK], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        case BDSC_HINT_WIFI_CONFIG_FAIL:
-            audio_player_tone_play(tone_uri[TONE_TYPE_WIFI_CONFIG_FAIL], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
-            break;
-        default:
-            ESP_LOGE(TAG, "invalid hint type");
-            break;
+
+    // app_music_task uninitialized
+    if(!g_app_music_init_finish_flag) {
+        play_tone_by_id(type);
+        return;
     }
+
+    tone_id = audio_calloc(1, sizeof(bdsc_hint_type_t));
+    *tone_id = type;
+    send_music_queue(TONE_MUSIC, tone_id);
+
 }
 
 int notify_bdsc_engine_event_to_user(int event, uint8_t *data, size_t data_len)
@@ -237,23 +192,12 @@ int notify_bdsc_engine_event_to_user(int event, uint8_t *data, size_t data_len)
     return g_bdsc_engine->cfg->event_handler(&evt);
 }
 
-void player_reset()
-{
-    if (g_bdsc_engine->asrnlp_ttsurl){
-        free(g_bdsc_engine->asrnlp_ttsurl);
-        g_bdsc_engine->asrnlp_ttsurl = NULL;
-    }
-}
-
-
-
 bool need_skip_current_playing();
 void dsp_fatal_handle(void);
 extern audio_err_t ap_helper_raw_play_abort_outbf();
 #define WK_FINISH (BIT0)
 
-
-static void do_sop(int event)
+static void stop_player(int event)
 {
     audio_player_state_t st = {0};
     audio_player_state_get(&st);
@@ -261,19 +205,13 @@ static void do_sop(int event)
     if ((st.media_src == MEDIA_SRC_TYPE_MUSIC_HTTP) &&
         (st.status == AUDIO_PLAYER_STATUS_RUNNING)) {
         handle_play_cmd(CMD_HTTP_PLAY_PAUSE, NULL, 0);
-        g_pre_player_need_resume = true;
+        pls_set_current_music_player_state(g_pls_handle, PAUSE_STATE);
     } else {
-        // multiple wakeup/tts resume feature removed
-        g_pre_player_need_resume = false;
-        // Variables changed must be ahead of stop cmd
-        // because stop cmd is blocking.
-        stop_play = true;
         if (event == EVENT_RECV_A2DP_START_PLAY) {
             if (st.media_src != MEDIA_SRC_TYPE_MUSIC_A2DP) {
                 handle_play_cmd(CMD_RAW_PLAY_STOP, NULL, 0);
             }
-        }
-        else {
+        } else {
             handle_play_cmd(CMD_RAW_PLAY_STOP, NULL, 0);
         }
     }
@@ -294,7 +232,7 @@ static void wk_task(void *pvParameters)
     //display_service_set_pattern(disp_serv, DISPLAY_PATTERN_WAKEUP_ON, 0);
     audio_player_int_tone_play(tone_uri[TONE_TYPE_WAKEUP + (xTaskGetTickCount()%4)]);   //random play wakwup mp3
     
-    do_sop(EVENT_WAKEUP_TRIGGER);
+    stop_player(EVENT_WAKEUP_TRIGGER);
     ESP_LOGI(TAG, "+++++++++++++ set bit!!! 3333 ");
     xEventGroupSetBits(g_bdsc_engine->wk_group, WK_FINISH);
     g_bdsc_engine->in_wakeup = false;
@@ -330,7 +268,7 @@ static void sop_task(void *pvParameters)
 {
     int event = *(int*)pvParameters;
 
-    do_sop(event);
+    stop_player(event);
     
     audio_free(pvParameters);
     vTaskDelete(NULL);
@@ -349,10 +287,36 @@ void stop_or_pause_async(int event)
     }
 }
 
-static char str_origin[16];
+bool check_duplex_mode_and_exit(char *extern_json)
+{
+    cJSON *j_content = NULL;
+    char *action_type_str = NULL;
+
+    if (extern_json &&
+        (j_content = cJSON_Parse((const char *)extern_json)) &&
+        (action_type_str = BdsJsonObjectGetString(j_content, "action_type")) &&
+        (!strncmp(action_type_str, "asrnlp_url", strlen("asrnlp_url")) ||
+        !strncmp(action_type_str, "asrnlp_mix", strlen("asrnlp_mix")) ||
+        !strncmp(action_type_str, "asrnlp_ttsurl", strlen("asrnlp_ttsurl")))) {
+        
+        if (g_bdsc_engine->in_duplex_mode) {
+            ESP_LOGI(TAG, "we don't process this kind message In duplex mode");
+            BdsJsonPut(j_content);
+            return true;
+        }
+    }
+
+    if (j_content) {
+        BdsJsonPut(j_content);
+    }
+    return false;
+}
+
 int32_t handle_bdsc_event(engine_elem_t elem)
 {
+    raw_data_t *raw = NULL;
     bdsc_custom_desire_action_t desire = BDSC_CUSTOM_DESIRE_DEFAULT;
+    
     switch (elem.event) {
         case EVENT_ASR_ERROR: {
                 bdsc_event_error_t *error = (bdsc_event_error_t *)elem.data;
@@ -419,7 +383,6 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                         ESP_LOGI(TAG, "%d restart asr", __LINE__);
                         g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_STARTTED;
 
-                        player_reset();
                         return 0;
                     default:
                         ESP_LOGI(TAG, "%d invalid state %d", __LINE__, g_bdsc_engine->g_asr_tts_state);
@@ -475,17 +438,7 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                             ESP_LOGW(TAG, "---> EVENT_ASR_RESULT sn=%s, idx=%d, buffer_length=%d, buffer=%s",
                                      asr_result->sn, asr_result->idx, asr_result->buffer_length, asr_result->buffer);
                             desire = notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_ASR_RESULT, (uint8_t*)asr_result, sizeof(bdsc_event_data_t));
-                            if (desire == BDSC_CUSTOM_DESIRE_RESUME) {
-                                if (g_pre_player_need_resume) {
-                                    g_pre_player_need_resume = false;
-                                    handle_play_cmd(CMD_HTTP_PLAY_RESUME, NULL, 0);
-                                }
-                                else {
-                                    // Do not need stop cause player will
-                                    // play new media to stop previous one.
-                                    bdsc_play_hint(BDSC_HINT_NOT_FIND);
-                                }
-                            }
+                            
                         } else {
                             ESP_LOGW(TAG, "---> EVENT_ASR_RESULT result null");
                         }
@@ -508,9 +461,6 @@ int32_t handle_bdsc_event(engine_elem_t elem)
             }
         case EVENT_ASR_EXTERN_DATA: {
                 bdsc_event_data_t *extern_result = (bdsc_event_data_t *)elem.data;
-                cJSON *j_content, *j_custom_reply, *j_item;
-                char *action_type_str = NULL, *type_str = NULL, *url = NULL, *origin = NULL;
-                int i;
                 switch (g_bdsc_engine->g_asr_tts_state) {
                     case ASR_TTS_ENGINE_WAKEUP_TRIGGER:
                     case ASR_TTS_ENGINE_STARTTED:
@@ -529,120 +479,15 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                                      extern_result->buffer_length, extern_result->buffer + 12);
                             
                             g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_EXTERN_DATA;
+                            if (check_duplex_mode_and_exit((char*)extern_result->buffer + 12)) {
+                                bdsc_engine_skip_current_session_playing_once_flag_set(g_bdsc_engine); // skip tailing tts data
+                                break;
+                            }
                             char *json_buf = NULL;
                             json_buf = audio_calloc(1, extern_result->buffer_length + 1);
                             memcpy(json_buf, extern_result->buffer + 12, extern_result->buffer_length);
                             desire = notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
-                            if (BDSC_CUSTOM_DESIRE_SKIP_DEFAULT == desire) {
-                                free(json_buf);
-                                json_buf = NULL;
-                                break;
-                            }
-                            if (BDSC_CUSTOM_DESIRE_DEFAULT == desire) {
-                                if (!(j_content = cJSON_Parse((const char *)json_buf))) {
-                                    ESP_LOGE(TAG, "json format error");
-                                    free(json_buf);
-                                    json_buf = NULL;
-                                    break;
-                                }
-                                free(json_buf);
-                                json_buf = NULL;
-                                /* 过滤 action_type 字段，决定 语音流的下发模式 */
-                                if (!(action_type_str = BdsJsonObjectGetString(j_content, "action_type"))) {
-                                    ESP_LOGE(TAG, "can not find action_type");
-                                    BdsJsonPut(j_content);
-                                    break;
-                                }
-                                origin = BdsJsonObjectGetString(j_content, "origin");
-                                if(origin != NULL && strlen(origin)<sizeof(str_origin)) {
-                                    strcpy(str_origin,origin);
-                                } else {
-                                    memset(str_origin,0,sizeof(str_origin));
-                                }
-
-                                if (!strncmp(action_type_str, "asrnlp_tts", strlen(action_type_str))) {
-                                    /* 1. 如果是 asrnlp_tts 模式，直接 raw play 即可 */
-                                    ESP_LOGI(TAG, "found tts type");
-                                    handle_play_cmd(CMD_RAW_PLAY_START, NULL, 0);
-                                } else if (!strncmp(action_type_str, "asrnlp_url", strlen(action_type_str)) ||
-                                            !strncmp(action_type_str, "asrnlp_mix", strlen(action_type_str)) ||
-                                            !strncmp(action_type_str, "asrnlp_ttsurl", strlen(action_type_str))) {
-                                    ESP_LOGI(TAG, "found url type or mix type");
-
-                                    if (g_bdsc_engine->in_duplex_mode) {
-                                        ESP_LOGI(TAG, "we don't process this kind message In duplex mode");
-                                        BdsJsonPut(j_content);
-                                        break;
-                                    }
-                                    if (!(j_custom_reply = BdsJsonObjectGet(j_content, "custom_reply"))) {
-                                        ESP_LOGE(TAG, "can not find action_type");
-                                        BdsJsonPut(j_content);
-                                        break;
-                                    }
-                                    if (cJSON_Array != BdsJsonGetType(j_custom_reply)) {
-                                        ESP_LOGE(TAG, "custom_reply format error");
-                                        BdsJsonPut(j_content);
-                                        break;
-                                    }
-                                    for (i = 0; i < BdsJsonArrayLen(j_custom_reply); i++) {
-                                        j_item = BdsJsonArrayGet(j_custom_reply, i);
-                                        if ((type_str = BdsJsonObjectGetString(j_item, "type")) &&
-                                                (!strncmp(type_str, "url", strlen(type_str))) &&
-                                                (url = BdsJsonObjectGetString(j_item, "value"))) {
-                                            ESP_LOGI(TAG, "found url: %s", url);
-                                            break;
-                                        }
-                                    }
-                                    if (!url) {
-                                        ESP_LOGE(TAG, "can not find url");
-                                        BdsJsonPut(j_content);
-                                        break;
-                                    }
-
-                                    if (!strncmp(action_type_str, "asrnlp_url", strlen(action_type_str))) {
-                                        if (!stop_play) {
-                                            // Only handle http play because it has much time penalty.
-                                            handle_play_cmd(CMD_HTTP_PLAY_START, (uint8_t *)url, strlen(url) + 1);
-                                        }
-                                    } else if ((!strncmp(action_type_str, "asrnlp_mix", strlen(action_type_str))) ||
-                                            (!strncmp(action_type_str, "asrnlp_ttsurl", strlen(action_type_str)))) {
-                                        ESP_LOGI(TAG, "found asrnlp_ttsurl or asrnlp_mix type");
-                                        handle_play_cmd(CMD_RAW_PLAY_START, NULL, 0);
-                                        if(strncmp(str_origin, MIGU_ORIGIN, strlen(str_origin)) &&\
-                                           strncmp(str_origin, HIMALAYA_ORIGIN, strlen(str_origin)) &&\
-                                           strncmp(str_origin, HIMALAYA_OLD_ORIGIN, strlen(str_origin)) &&\
-                                           strncmp(str_origin, QING_ORIGIN, strlen(str_origin))) {         //music source is handled in app_music.c
-                                            if (g_bdsc_engine->asrnlp_ttsurl) {
-                                                free(g_bdsc_engine->asrnlp_ttsurl);
-                                                g_bdsc_engine->asrnlp_ttsurl = NULL;
-                                            }
-                                            g_bdsc_engine->asrnlp_ttsurl = audio_strdup(url);
-                                        }
-
-                                    }
-                                }
-                                else {
-                                    if (!strncmp(action_type_str, "asr_none", strlen(action_type_str))) {
-                                        ESP_LOGI(TAG, "got action_type: asr_none");
-                                    } else if (!strncmp(action_type_str, "asrnlp_none", strlen(action_type_str))) {
-                                        ESP_LOGI(TAG, "got action_type: asrnlp_none");
-                                    } else {
-                                        ESP_LOGE(TAG, "unknown action_type");
-                                    }
-                                    // tts only case handled in ASR_END event.
-                                    // Other action type handled here.
-                                    // if (g_pre_player_need_resume) {
-                                    //     g_pre_player_need_resume = false;
-                                    //     handle_play_cmd(CMD_HTTP_PLAY_RESUME, NULL, 0);
-                                    // }
-                                }
-                                BdsJsonPut(j_content);
-                            }
-                            if (json_buf) {
-                                free(json_buf);
-                                json_buf = NULL;
-                            }
-                            
+                            free(json_buf);
                         }
                         break;
                     case ASR_TTS_ENGINE_GOT_EXTERN_DATA:
@@ -687,12 +532,14 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                             ESP_LOGW(TAG, "---> EVENT_ASR_TTS_DATA sn=%s, idx=%d, buffer_length=%d, buffer=%p",
                                      tts_data->sn, tts_data->idx,
                                      tts_data->buffer_length, tts_data->buffer);
+
                             if (!need_skip_current_playing()) {
-                                int ret = handle_tts_data((char*)tts_data->buffer, tts_data->buffer_length);
+                                int ret = handle_tts_package_data(tts_data);
                                 if (ret == -1 && tts_data->idx == 0) {
                                     // if the first tts data is error, skip current playing
                                     bdsc_engine_skip_current_session_playing_once_flag_set(g_bdsc_engine);
                                 }
+
                             }
                         }
                         g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_TTS_DATA;
@@ -734,7 +581,7 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                             break;
                         }
                         break;
-                    case ASR_TTS_ENGINE_GOT_TTS_DATA: {
+                    case ASR_TTS_ENGINE_GOT_TTS_DATA:
                         ESP_LOGI(TAG, "got asr end, has tts data");
                         g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_ASR_END;
 
@@ -746,41 +593,9 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                             }
                             break;
                         }
-
-                        handle_play_cmd(CMD_RAW_PLAY_FEED_FINISH, NULL, 0);
                         if (g_bdsc_engine->in_duplex_mode) {
                             // FIXME: in duplex mode, waiting for 'haode' palying done
-                            vTaskDelay(300 / portTICK_PERIOD_MS);
-                        }
-                        if (g_bdsc_engine->asrnlp_ttsurl) {
-                            audio_err_t ret;
-                            ret = audio_player_raw_waiting_finished();
-                            // Mixplay stopped by user we can not play url.
-                            // Stop at the tail of tts play sometimes and return
-                            // value is not STOP_BY_USER. So we use stop_play to avoid
-                            // unnecessary http play.
-                            // Only handle http play because it has much time penalty.
-                            if ((ret == ESP_OK) && !stop_play) {
-                               handle_play_cmd(CMD_HTTP_PLAY_START, (uint8_t *)g_bdsc_engine->asrnlp_ttsurl, strlen(g_bdsc_engine->asrnlp_ttsurl) + 1);
-                            }
-                            free(g_bdsc_engine->asrnlp_ttsurl);
-                            g_bdsc_engine->asrnlp_ttsurl = NULL;
-                        } else {
-                            // only tts data so resume previous url play.
-                            if (g_bdsc_engine->in_duplex_mode) {
-                                g_pre_player_need_resume = false;
-                            } else {
-                                audio_player_raw_waiting_finished();
-                                if (g_pre_player_need_resume) {
-                                    g_pre_player_need_resume = false;
-                                    if(strncmp(str_origin, MIGU_ORIGIN, strlen(str_origin)) &&\
-                                           strncmp(str_origin, HIMALAYA_ORIGIN, strlen(str_origin)) &&\
-                                           strncmp(str_origin, HIMALAYA_OLD_ORIGIN, strlen(str_origin)) &&\
-                                           strncmp(str_origin, QING_ORIGIN, strlen(str_origin))) {
-                                        handle_play_cmd(CMD_HTTP_PLAY_RESUME, NULL, 0);            //Don't resume when receive music query
-                                    }
-                                }
-                            }
+                            vTaskDelay(600 / portTICK_PERIOD_MS);
                         }
                         if (g_bdsc_engine->in_duplex_mode) {
                             //bdsc_stop_asr();
@@ -789,7 +604,6 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                             g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_STARTTED;
                         }
                         break;
-                    }
                     case ASR_TTS_ENGINE_GOT_ASR_ERROR:
                     case ASR_TTS_ENGINE_GOT_ASR_END:
                         ESP_LOGI(TAG, "%d invalid state %d", __LINE__, g_bdsc_engine->g_asr_tts_state);
@@ -800,7 +614,6 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                         ESP_LOGI(TAG, "%d invalid state %d", __LINE__, g_bdsc_engine->g_asr_tts_state);
                         break;
                 }
-
                 break;
             }
         case EVENT_WAKEUP_TRIGGER: {
@@ -815,7 +628,6 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                 if (BDSC_CUSTOM_DESIRE_SKIP_DEFAULT == desire) {
                     break;
                 }
-
                 switch (g_bdsc_engine->g_asr_tts_state) {
                     case ASR_TTS_ENGINE_WAKEUP_TRIGGER:
                     case ASR_TTS_ENGINE_STARTTED:
@@ -833,7 +645,6 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                         g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_WANT_RESTART_ASR;
                         break;
                     case ASR_TTS_ENGINE_GOT_ASR_END:
-                        player_reset();
 
                         ESP_LOGI(TAG, "==> triggered, start asr");
                         g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_STARTTED;
@@ -842,9 +653,18 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                         ESP_LOGI(TAG, "%d invalid state %d", __LINE__, g_bdsc_engine->g_asr_tts_state);
                         break;
                 }
-
                 break;
             }
+        case EVENT_WAKEUP_OFFLINE_DIRECTIVE: {
+            bdsc_event_data_t *dir_data = (bdsc_event_data_t*)elem.data;
+            if (dir_data) {
+                ESP_LOGI(TAG, "---> EVENT_WAKEUP_OFFLINE_DIRECTIVE idx=%d, buffer_length=%d, buffer=%s",
+                        dir_data->idx, dir_data->buffer_length, dir_data->buffer);
+            } else {
+                ESP_LOGE(TAG, "---> EVENT_WAKEUP_OFFLINE_DIRECTIVE data null");
+            }
+            break;
+        }
         case EVENT_WAKEUP_ERROR: {
                 bdsc_event_error_t *error = (bdsc_event_error_t *)elem.data;
                 if (error) {
@@ -930,52 +750,29 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                 if (!g_bdsc_engine->in_duplex_mode) {
                     bdsc_stop_asr();
                 }
-                player_reset();
                 g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_ASR_END;
-                handle_play_cmd(CMD_HTTP_PLAY_MQTT, (uint8_t *)elem.data, elem.data_len);
+                char *mqtt_url = audio_strdup((const char*)elem.data);
+                send_music_queue(MQTT_URL, mqtt_url);
                 break;
             }
         case EVENT_RECV_A2DP_START_PLAY: {
                 bdsc_stop_asr();
-                player_reset();
                 g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_ASR_END;
-                handle_play_cmd(CMD_A2DP_PLAY_START, (uint8_t *)elem.data, elem.data_len);
+                char *a2dp_url = audio_strdup((const char*)elem.data);
+                send_music_queue(A2DP_PLAY, a2dp_url);
                 break;
             }
         case EVENT_RECV_ACTIVE_TTS_PLAY: {
                 audio_player_stop();
                 ap_helper_raw_play_abort_outbf();
                 bdsc_stop_asr();
-                player_reset();
                 g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_ASR_END;
-                start_tts((char *)elem.data);
                 break;
             }
-        case EVENT_TTS_BEGIN:
-            handle_play_cmd(CMD_RAW_PLAY_START, NULL, 0);
-            break;
-        case EVENT_TTS_RESULT:
-            handle_play_cmd(CMD_RAW_PLAY_FEED_DATA, (uint8_t *)elem.data, elem.data_len);
-            break;
-        case EVENT_TTS_END:
-            handle_play_cmd(CMD_RAW_PLAY_FEED_FINISH, NULL, 0);
-            audio_player_raw_waiting_finished();
-            break;
-        case EVENT_DSP_LOAD_FAILED: {
-            ESP_LOGW(TAG, "---> EVENT_DSP_LOAD_FAILED");
-            if (!g_bdsc_engine->dsp_detect_error) {
-                g_bdsc_engine->dsp_detect_error = true;
-                bdsc_play_hint(BDSC_HINT_DSP_LOAD_FAIL);
-                vTaskDelay(5000 / portTICK_PERIOD_MS); // make sure play done
-            }
-            break;
-        }
         default:
             ESP_LOGE(TAG, "!!! unknow event !!!");
             break;
     }
-
-    stop_play = false;
     
     return 0;
 }
@@ -1004,8 +801,20 @@ void event_engine_elem_FlushQueque()
 
 }
 
+static void asr_session_st_update(int event)
+{
+    if (event == EVENT_WAKEUP_TRIGGER) {
+        g_bdsc_engine->cur_in_asr_session = true;
+        g_bdsc_engine->need_skip_current_pending_http_part = false;
+    }
+    if (event == EVENT_ASR_END) {
+        g_bdsc_engine->cur_in_asr_session = false;
+    }
+}
+
 void event_engine_elem_EnQueque(int event, uint8_t *buffer, size_t len)
 {
+    asr_session_st_update(event);
     if (!g_bdsc_engine->enqueue_mutex) {
         return;
     }
@@ -1063,7 +872,7 @@ static void engine_task(void *pvParameters)
             free(elem.data);
             ESP_LOGW("EVENT_OUT", "Handle sdk event end.");
         }
-        ESP_LOGI(TAG, "Stack: %d", uxTaskGetStackHighWaterMark(NULL));
+        //ESP_LOGI(TAG, "Stack: %d", uxTaskGetStackHighWaterMark(NULL));
     }
 
     vTaskDelete(NULL);

@@ -56,9 +56,11 @@ typedef enum {
     BDSC_EVENT_ON_CHANNEL_DATA,      /*!< Occurs when receiving mqtt data from server */
 } bdsc_engine_event_id_t;
 
+/**
+ * @brief   Interrupt the default play logic
+ */
 typedef enum {
     BDSC_CUSTOM_DESIRE_SKIP_DEFAULT,
-    BDSC_CUSTOM_DESIRE_RESUME,
     BDSC_CUSTOM_DESIRE_DEFAULT,
 } bdsc_custom_desire_action_t;
 
@@ -126,6 +128,8 @@ struct bdsc_engine {
     EventGroupHandle_t      wk_group;
 
     bdsc_engine_internal_st g_asr_tts_state;
+    bool                    cur_in_asr_session;
+    bool                    need_skip_current_pending_http_part;
 
     esp_mqtt_client_handle_t g_mqtt_client;
     char                     g_pub_topic[256];
@@ -259,6 +263,9 @@ void bdsc_engine_start_tts(const char *tts_text);
 
 void start_sdk();
 void stop_sdk();
+
+
+#define ACTIVE_TTS_PREFIX   "http://activetts/"
 
 #ifdef __cplusplus
 }

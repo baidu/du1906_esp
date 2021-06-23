@@ -92,7 +92,7 @@ void bds_set_log_level(int level);
  * @return
  */
 void bds_set_log_callback(void(*log_listener)(const char* format, ...));
-
+uint64_t bdsc_sys_tick_ms();
 #define DURATION_MS(n)  ((n)/portTICK_PERIOD_MS)
 
 #ifdef __cplusplus

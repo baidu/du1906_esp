@@ -98,6 +98,36 @@ bool need_skip_current_playing()
     return false;
 }
 
+static bool _check_dumplex_mode_st(cJSON *json)
+{
+    char *origin_str = NULL;
+
+    if ((origin_str = BdsJsonObjectGetString(json, "origin")) &&
+        (!strncmp(origin_str, "1016074", strlen("1016074"))) &&
+        g_bdsc_engine->duplex_mode_function_enable) {
+        
+        return true;
+    }
+    return false;
+}
+#ifdef CONFIG_CLOUD_LOG
+esp_err_t cloud_print_on();
+static void start_log_upload(int level)
+{
+    if (!app_cloud_log_task_check_inited()) {
+        cloud_log_cfg_t log_cfg = {
+            .type  = LOG_CHANNEL_TYPE_HTTPS,
+            .level = CLOUD_LOG_WARN,
+        };
+        app_cloud_log_task_init(&log_cfg);
+        
+        cloud_print_on();
+        vTaskDelay(1000);
+    }
+    set_cloud_log_level(level);
+}
+#endif
+
 esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
 {
     cJSON *json = NULL;
@@ -207,11 +237,10 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
         }
         /* 如果处在全双工模式，禁止播放 3005 的提示音 */
         if (err_value == -3005 || err_value == -3003) {
-            if (!g_bdsc_engine->in_duplex_mode) {
+            if (g_bdsc_engine->in_duplex_mode || need_skip_current_playing()) {
                 // in duplex mode, dont play hint
-                // bdsc_play_hint(BDSC_HINT_NOT_FIND);
-                BdsJsonPut(json);
-                return BDSC_CUSTOM_DESIRE_RESUME;
+            } else {
+                bdsc_play_hint(BDSC_HINT_NOT_FIND);
             }
             BdsJsonPut(json);
             return BDSC_CUSTOM_DESIRE_DEFAULT;
@@ -238,27 +267,27 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
         if(strstr((char *)g_bdsc_engine->current_asr_words,"打开云端调试日志") != NULL)
         {
             ESP_LOGI(TAG, "set level 打开云端调试日志");
-            set_cloud_log_level(ESP_LOG_DEBUG);
+            start_log_upload(ESP_LOG_DEBUG);
         }
         else if(strstr((char *)g_bdsc_engine->current_asr_words,"打开云端信息日志") != NULL)
         {
             ESP_LOGI(TAG, "set level 打开云端信息日志");
-            set_cloud_log_level(ESP_LOG_INFO);
+            start_log_upload(ESP_LOG_INFO);
         }
         else if(strstr((char *)g_bdsc_engine->current_asr_words,"打开云端警告日志") != NULL)
         {
             ESP_LOGI(TAG, "set level 打开云端警告日志");
-            set_cloud_log_level(ESP_LOG_WARN);
+            start_log_upload(ESP_LOG_WARN);
         }
         else if(strstr((char *)g_bdsc_engine->current_asr_words,"打开云端错误日志") != NULL)
         {
             ESP_LOGI(TAG, "set level 打开云端错误日志");
-            set_cloud_log_level(ESP_LOG_ERROR);
+            start_log_upload(ESP_LOG_ERROR);
         }
         else if(strstr((char *)g_bdsc_engine->current_asr_words,"关闭云端日志") != NULL)
         {
             ESP_LOGI(TAG, "set level 关闭云端日志");
-            set_cloud_log_level(ESP_LOG_NONE);
+            start_log_upload(ESP_LOG_NONE);
         }
 #endif
         return BDSC_CUSTOM_DESIRE_DEFAULT;
@@ -300,7 +329,6 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
 
         
         cJSON *j_content = NULL;
-        char *origin_str = NULL;
         /* 某些情况下，需要跳过当前会话 */
         if (need_skip_current_playing()) {
             ESP_LOGI(TAG, "skip playing");
@@ -311,45 +339,15 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
             return BDSC_CUSTOM_DESIRE_SKIP_DEFAULT;
         }
 #if CONFIG_CUPID_BOARD_V2
-        /* 过滤 tv_action 字段，进入全双工模式 */
-        if ((origin_str = BdsJsonObjectGetString(j_content, "origin")) &&
-            (!strncmp(origin_str, "1016074", strlen("1016074"))) &&
-            g_bdsc_engine->duplex_mode_function_enable) {
-            if (g_bdsc_engine->in_duplex_mode == 0) {
-                ESP_LOGI(TAG, "catch tv_action! ENTER duplex mode!");
-                g_bdsc_engine->in_duplex_mode = 1;
-                if (xTimerStart(g_bdsc_engine->duplex_timer, 10 / portTICK_PERIOD_MS) != pdPASS) {
-                    ESP_LOGE(TAG, "DUPLEX timer can not start and we must do something!");
-                }
-                display_service_set_pattern(g_disp_serv, DISPLAY_PATTERN_VOLUMN_UP, 0);
-                if ((resp_str = create_duplex_mode_status_string(1))) {
-                    bdsc_engine_channel_data_upload((uint8_t *)resp_str, strlen(resp_str) + 1);
-                    free(resp_str);
-                    display_service_set_pattern(g_disp_serv, DISPLAY_PATTERN_MUTE_ON, 0);
-                }
-            } else {
-                ESP_LOGI(TAG, "already in duplex mode!");
-                if (xTimerStop(g_bdsc_engine->duplex_timer, 10 / portTICK_PERIOD_MS) != pdPASS) {
-                    ESP_LOGE(TAG, "Can not delete duplex timer, must do something!");
-                }
-                if (xTimerStart(g_bdsc_engine->duplex_timer, 10 / portTICK_PERIOD_MS) != pdPASS) {
-                    ESP_LOGE(TAG, "DUPLEX timer can not start and we must do something!");
-                }
-                display_service_set_pattern(g_disp_serv, DISPLAY_PATTERN_VOLUMN_UP, 0);
-            }
+        if (_check_dumplex_mode_st(j_content) == false && g_bdsc_engine->in_duplex_mode) {
+            /* 在duplex_mode中，过滤掉所有“非电视控制技能”的tts语音，以及url(如果有的话) */
+            bdsc_engine_skip_current_session_playing_once_flag_set(evt->client);
             BdsJsonPut(j_content);
-            return BDSC_CUSTOM_DESIRE_DEFAULT;
-        } 
-		else 
-#endif
-		{
-            if (g_bdsc_engine->in_duplex_mode) {
-                /* 在duplex_mode中，过滤掉所有“非电视控制技能”的tts语音，以及url(如果有的话) */
-                bdsc_engine_skip_current_session_playing_once_flag_set(evt->client);
-            }
-
-            app_voice_control_feed_data(j_content, NULL);
+            return BDSC_CUSTOM_DESIRE_SKIP_DEFAULT;
         }
+#endif
+
+        app_voice_control_feed_data(j_content, NULL);
 
         BdsJsonPut(j_content);
         return BDSC_CUSTOM_DESIRE_DEFAULT;
@@ -435,13 +433,7 @@ void app_main(void)
     } else {
         client->asr_block_words = audio_strdup(block_word);
     }
-#ifdef CONFIG_CLOUD_LOG
-    cloud_log_cfg_t log_cfg = {
-        .type  = LOG_CHANNEL_TYPE_HTTPS,
-        .level = CLOUD_LOG_WARN,
-    };
-    app_cloud_log_task_init(&log_cfg);
-#endif
+
 #ifdef CONFIG_ENABLE_MUSIC_UNIT
     app_music_init();
 #endif

@@ -5,5 +5,5 @@
 
 
 COMPONENT_ADD_INCLUDEDIRS := include migu_sdk/include/
-COMPONENT_SRCDIRS := . migu_sdk/.
-COMPONENT_ADD_LDFLAGS += -L$(COMPONENT_PATH)/migu_sdk/lib -lmigu -lmigu_https -lmigu_music
+COMPONENT_SRCDIRS := .
+COMPONENT_ADD_LDFLAGS += -L$(COMPONENT_PATH)/migu_sdk/lib -lmigu -lmigu_music_service -lmigu_sdk_helper -lmigu_https

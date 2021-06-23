@@ -34,7 +34,9 @@ typedef enum {
     EVENT_ASR_END,
     EVENT_ASR_CANCEL,
     EVENT_ASR_ERROR,
+    EVENT_ASR_GENERAL_INFO,
     EVENT_WAKEUP_TRIGGER = 2000,
+    EVENT_WAKEUP_OFFLINE_DIRECTIVE,
     EVENT_WAKEUP_ERROR,
     EVENT_EVENTUPLOAD_BEGIN = 3000,
     EVENT_EVENTUPLOAD_END,
@@ -50,16 +52,12 @@ typedef enum {
     EVENT_RECORDER_DATA = 6000,
     EVENT_RECORDER_ERROR,
     EVENT_SDK_START_COMPLETED = 7000,
+    EVENT_SDK_START_FAILED = 7001,
     EVENT_RECV_MQTT_PUSH_URL,
     EVENT_RECV_A2DP_START_PLAY,
     EVENT_RECV_ACTIVE_TTS_PLAY,
     EVENT_DSP_FATAL_ERROR = 8000,
-    EVENT_DSP_LOAD_FAILED = 8001,
-    EVENT_TTS_BEGIN = 9000,
-    EVENT_TTS_END,
-    EVENT_TTS_RESULT,
-    EVENT_TTS_CANCEL,
-    EVENT_TTS_ERROR,
+    EVENT_MIC_DETECT_DATA = 8001,
 } bdsc_event_key_t;
 
 /**
@@ -106,6 +104,8 @@ typedef struct {
  */
 typedef struct {
     int status;
+    char wakeup_words[WP_WORDS_LENGTH];
+    uint64_t wp_time_tick;
     uint16_t dci_length;
     uint8_t dci_buffer[];
 } bdsc_event_wakeup_t;
@@ -159,7 +159,8 @@ bdsc_event_data_t* bdsc_event_data_create(char *sn,
 void bdsc_event_data_destroy(bdsc_event_data_t *data);
 
 bdsc_event_wakeup_t*  bdsc_wakeup_data_create(int status, uint16_t buffer_length, uint8_t *buffer);
-
+bdsc_event_wakeup_t*  bdsc_wakeup_data_create2(int status, char* wakeup_words, uint16_t buffer_length,\
+                                                uint8_t *buffer, uint64_t time_tick);
 void bdsc_wakeup_data_destroy(bdsc_event_wakeup_t *data);
 
 /**

@@ -105,7 +105,7 @@ static int esp_tcp_connect(const char *host, int hostlen, int port, int *sockfd,
 
     int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (fd < 0) {
-        ESP_LOGE(TAG, "Failed to create socket (family %d socktype %d protocol %d)", res->ai_family, res->ai_socktype, res->ai_protocol);
+        ESP_LOGE(TAG, "Failed to create socket (family %d socktype %d protocol %d), errno: %d", res->ai_family, res->ai_socktype, res->ai_protocol, errno);
         goto err_freeaddr;
     }
 
@@ -342,12 +342,12 @@ static int create_ssl_handle(esp_tls_t *tls, const char *hostname, size_t hostle
 #ifdef CONFIG_MBEDTLS_DEBUG
     mbedtls_esp_enable_debug_log(&tls->conf, 4);
 #endif
-
+    mbedtls_ssl_conf_read_timeout(&tls->conf, (5 * 1000));
     if ((ret = mbedtls_ssl_setup(&tls->ssl, &tls->conf)) != 0) {
         ESP_LOGE(TAG, "mbedtls_ssl_setup returned -0x%x\n\n", -ret);
         goto exit;
     }
-    mbedtls_ssl_set_bio(&tls->ssl, &tls->server_fd, mbedtls_net_send, mbedtls_net_recv, NULL);
+    mbedtls_ssl_set_bio(&tls->ssl, &tls->server_fd, mbedtls_net_send, NULL, mbedtls_net_recv_timeout);
 
     return 0;
 exit:
@@ -363,7 +363,14 @@ void esp_tls_conn_delete(esp_tls_t *tls)
     if (tls != NULL) {
         mbedtls_cleanup(tls);
         if (tls->is_tls) {
-            mbedtls_net_free(&tls->server_fd);
+            if (tls->server_fd.fd > 0) {
+                mbedtls_net_free(&tls->server_fd);
+            } else if (tls->sockfd > 0) {
+                /* In async mode, if select timeout in socket connect call, ctx->fd is -1.
+                * So you should close tls->sockfd manually.
+                */
+                close(tls->sockfd);
+            }
         } else if (tls->sockfd >= 0) {
             close(tls->sockfd);
         }
@@ -457,9 +464,10 @@ static int esp_tls_low_level_conn(const char *hostname, int hostlen, int port, c
         case ESP_TLS_HANDSHAKE:
             ESP_LOGD(TAG, "handshake in progress...");
             
-            ESP_LOGI(TAG, "#############  Tls start to handshake... ############");
+            int start = xTaskGetTickCount();
+            ESP_LOGI(TAG, "#############  Tls start to handshake... id: %d ############", start);
             ret = mbedtls_ssl_handshake(&tls->ssl);
-            ESP_LOGI(TAG, "#############  Tls handshake success !!! ############");
+            ESP_LOGI(TAG, "#############  Tls handshake success !!! id: %d , used: %d ############", start, (xTaskGetTickCount() - start));
             
             if (ret == 0) {
                 tls->conn_state = ESP_TLS_DONE;

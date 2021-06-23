@@ -42,8 +42,11 @@
 #include "blufi_config.h"
 #include "raw_play_task.h"
 #include "bdsc_ota_partitions.h"
+#include "bds_private.h"
+#include "app_music.h"
 
 #define  MAIN_TAG  "BDSC_ENGINE"
+#define TTS_URI_BUFFER_LEN 4096
 
 bdsc_engine_handle_t g_bdsc_engine;
 extern display_service_handle_t g_disp_serv;
@@ -97,6 +100,12 @@ static int32_t bdsc_event_callback(bds_client_event_t *event, void *custom)
             event_engine_elem_EnQueque(EVENT_WAKEUP_TRIGGER, event->content, sizeof(bdsc_event_wakeup_t));
             break;
         }
+        case EVENT_WAKEUP_OFFLINE_DIRECTIVE:
+        {
+            display_service_set_pattern(g_disp_serv, DISPLAY_PATTERN_WAKEUP_ON, 0);
+            event_engine_elem_EnQueque(EVENT_WAKEUP_OFFLINE_DIRECTIVE, event->content, sizeof(bdsc_event_wakeup_t));
+            break;
+        }
         case EVENT_WAKEUP_ERROR:
         {
             event_engine_elem_EnQueque(EVENT_WAKEUP_ERROR, event->content, sizeof(bdsc_event_error_t));
@@ -138,66 +147,6 @@ static int32_t bdsc_event_callback(bds_client_event_t *event, void *custom)
             event_engine_elem_EnQueque(EVENT_DSP_FATAL_ERROR, event->content, sizeof(bdsc_event_error_t));
             break;
         }
-        case EVENT_DSP_LOAD_FAILED:
-        {
-            event_engine_elem_EnQueque(EVENT_DSP_LOAD_FAILED, NULL, 0);
-            break;
-        }
-        case EVENT_TTS_BEGIN:
-        {
-            bdsc_event_process_t *process = (bdsc_event_process_t*)event->content;
-            if (process) {
-                ESP_LOGI(MAIN_TAG, "---> EVENT_TTS_BEGIN sn=%s", process->sn);
-            } else {
-                ESP_LOGE(MAIN_TAG, "---> EVENT_TTS_BEGIN process null");
-            }
-            event_engine_elem_EnQueque(EVENT_TTS_BEGIN, NULL, 0);
-            break;
-        }
-        case EVENT_TTS_RESULT:
-        {
-            bdsc_event_data_t *tts_data = (bdsc_event_data_t*)event->content;
-            if (tts_data) {
-                ESP_LOGI(MAIN_TAG, "---> EVENT_TTS_DATA sn=%s, idx=%d, buffer_length=%d",
-                            tts_data->sn, tts_data->idx, tts_data->buffer_length);
-            } else {
-                ESP_LOGE(MAIN_TAG, "---> EVENT_TTS_DATA extern null");
-            }
-            event_engine_elem_EnQueque(EVENT_TTS_RESULT, (uint8_t *)tts_data->buffer, tts_data->buffer_length);
-            break;
-        }
-        case EVENT_TTS_END:
-        {
-            bdsc_event_process_t *process = (bdsc_event_process_t*)event->content;
-            if (process) {
-                ESP_LOGI(MAIN_TAG, "---> EVENT_TTS_END sn=%s", process->sn);
-            } else {
-                ESP_LOGE(MAIN_TAG, "---> EVENT_TTS_END process null");
-            }
-            event_engine_elem_EnQueque(EVENT_TTS_END, NULL, 0);
-            break;
-        }
-        case EVENT_TTS_CANCEL:
-        {
-            bdsc_event_process_t *process = (bdsc_event_process_t*)event->content;
-            if (process) {
-                ESP_LOGI(MAIN_TAG, "---> EVENT_TTS_CANCEL sn=%s", process->sn);
-            } else {
-                ESP_LOGE(MAIN_TAG, "---> EVENT_TTS_CANCEL process null");
-            }
-            break;
-        }
-        case EVENT_TTS_ERROR:
-        {
-            bdsc_event_error_t *error = (bdsc_event_error_t*)event->content;
-            if (error) {
-                ESP_LOGI(MAIN_TAG, "---> EVENT_TTS_ERROR sn=%s, code=%"PRId32"--info_length=%"PRIu16"--info=%s",
-                            error->sn, error->code, error->info_length, error->info);
-            } else {
-                ESP_LOGE(MAIN_TAG, "---> EVENT_TTS_ERROR error null");
-            }
-            break;
-        }
         default:
             ESP_LOGE(MAIN_TAG, "!!! unknow event %d!!!", event->key);
             break;
@@ -223,8 +172,6 @@ void start_sdk()
             return;
         }
     }
-
-    ws_connect_config();
     int err = bds_client_start(g_bdsc_engine->g_client_handle);
     if (err) {
         ESP_LOGE(MAIN_TAG, "bds_client_start failed");
@@ -239,7 +186,6 @@ void start_sdk()
 void config_sdk(bds_client_handle_t handle)
 {
     esp_partition_t *partition = NULL;
-
     ESP_LOGI(MAIN_TAG, "bootbale dsp lable: %s", bdsc_partitions_get_bootable_dsp_label());
     partition = (esp_partition_t *)esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
             ESP_PARTITION_SUBTYPE_ANY, bdsc_partitions_get_bootable_dsp_label());
@@ -247,12 +193,16 @@ void config_sdk(bds_client_handle_t handle)
         ESP_LOGE(MAIN_TAG, "Can not find dsp partition");
         return;
     }
-
-    bds_client_params_t params = {
-        .launch_mode = 0,
-        .dsp_subtype = partition->subtype,
-    };
+    char sn[37];
+    generate_uuid(sn);
+    char *pam_data = "";//iot don't authentication when connect server
+    bdsc_engine_params_t *engine_params = bdsc_engine_params_create_wrapper(sn, "du1906_app", strlen(pam_data) + 1, pam_data);
+    bds_client_params_t params;
+    memset(&params, 0 , sizeof(bds_client_params_t));
+    params.engine_params = engine_params;
+    params.dsp_subtype = partition->subtype;
     bds_client_config(handle, &params);
+    bdsc_engine_params_destroy(engine_params);
 }
 
 void stop_sdk()
@@ -268,6 +218,7 @@ static void bdsc_sdk_init()
     bds_client_set_event_listener(g_bdsc_engine->g_client_handle, bdsc_event_callback, NULL);
     bds_set_log_level(g_bdsc_engine->cfg->log_level);
     start_sdk();
+    bdsc_link_start();
     bdsc_start_wakeup();
 
     esp_log_level_set("wakeup_hal", ESP_LOG_WARN);
@@ -402,10 +353,17 @@ esp_err_t bdsc_engine_deinit(bdsc_engine_handle_t client)
     return ESP_OK;
 }
 
-
 void bdsc_engine_start_tts(const char *tts_text)
 {
     ESP_LOGI(MAIN_TAG, "==> bdsc_engine_start_tts");
-    event_engine_elem_EnQueque(EVENT_RECV_ACTIVE_TTS_PLAY, (uint8_t *)tts_text, strlen(tts_text) + 1);
+    char *buffer = audio_calloc(1, TTS_URI_BUFFER_LEN);
+    if(buffer == NULL) {
+        ESP_LOGE(MAIN_TAG, "%s|%d: malloc fail!", __func__, __LINE__);
+        return;
+    }
+    buffer[0] = '\0';
+    strncat(buffer, ACTIVE_TTS_PREFIX, TTS_URI_BUFFER_LEN - strlen(buffer));
+    strncat(buffer, tts_text, TTS_URI_BUFFER_LEN - strlen(buffer));
+    send_music_queue(ACTIVE_TTS, buffer);
 }
 

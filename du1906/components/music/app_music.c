@@ -28,195 +28,28 @@
 #include "bdsc_json.h"
 #include "audio_def.h"
 #include "freertos/timers.h"
-#include "migu_music.h"
-#include "app_music.h"
 #include "bdsc_tools.h"
 #include "bdsc_engine.h"
 #include "bdsc_http.h"
 #include "math.h"
 #include "app_voice_control.h"
 #include "bds_private.h"
+#include "audio_tone_uri.h"
 #include "app_task_register.h"
+#include "app_music.h"
+#include "play_list.h"
+#include "migu_music_service.h"
+#include "migu_sdk_helper.h"
 
 #define TAG "MUSIC_TASK"
-#define SILENT_NEXT_TIME_EARLY  (15*1000)
-extern const uint8_t server_root_cert_pem_start[] asm("_binary_server_root_cert_pem_start");
-extern const uint8_t server_root_cert_pem_end[]   asm("_binary_server_root_cert_pem_end");
-
+static audio_thread_t next_song_task_handle = NULL;
+static TimerHandle_t next_song_timer_handle = NULL;
+#define SILENT_NEXT_TIME_EARLY      (15 * 1000)
+#define MUSIC_QUEUE_ITEM_NUM        256
+bool g_app_music_init_finish_flag = false;
 xQueueHandle g_music_queue_handle = NULL;
-static TimerHandle_t next_music_timer_handle = NULL;
-extern bool g_pre_player_need_resume;
-typedef struct _music {
-    struct _music       *next;
-    music_type_t        type;
-    char                *url;
-    int                 duration;
-    music_play_state_t  play_state;
-} music_t;
 
-static music_t *current_music = NULL;
-audio_thread_t next_task_handle = NULL;
-
-void set_music_player_state(music_play_state_t state)
-{
-    if (!current_music) {
-        return;
-    }
-    current_music->play_state = state;
-}
-
-music_play_state_t get_music_player_state()
-{
-    if (!current_music) {
-        return UNKNOW_STATE;
-    }
-    return current_music->play_state;
-}
-
-music_t* create_music(music_type_t type, char *url)
-{
-    music_t *node = NULL;
-    char *url_value = NULL;
-
-    if (!(node = audio_calloc(1,sizeof(music_t)))) {
-        ERR_OUT(ERR_RET, "calloc fail");
-    }
-
-    if (!(url_value = audio_strdup(url))) {
-        ERR_OUT(ERR_FREE_NODE, "strdup fail");
-    }
-
-    node->type = type;
-    node->url = url_value;
-    node->next = NULL;
-    return node;
-
-ERR_FREE_NODE:
-    audio_free(node);
-ERR_RET:
-    return NULL;
-}
-
-void delete_music(music_t *node)
-{
-    if (node == NULL) {
-        return;
-    }
-    if (node->url) {
-        audio_free(node->url);
-    }
-    audio_free(node);
-    node = NULL;
-}
-
-static music_t* get_music_by_id(char *id)
-{
-    int ret = 0;
-    char recvd_url[1024] = {0};
-    
-    if (!id) {
-        ERR_OUT(ERR_RET, "id is null");
-    }
-    ret = get_migu_url(id, recvd_url, sizeof(recvd_url));
-    if (ret) {
-        ERR_OUT(ERR_RET, "get_migu_url fail");
-    }
-
-    return create_music(ID_MUSIC, recvd_url);
-
-ERR_RET:
-    return NULL;
-}
-
-static int generate_unit_post_string_need_free(char **post_buff, const char *uri, const char *private_body_str)
-{
-    int ts = -1;
-    char *tmp_str = "";
-    char *sig = NULL;
-    int content_length = -1;
-    int post_length = -1;
-    int cnt = -1;
-    
-    ts = get_current_valid_ts() / 60;
-    if (ts <= 0) {
-        ERR_OUT(get_current_time_fail, "get time fail!!!");
-    }
-
-    if (private_body_str != NULL) {
-        tmp_str = (char *)private_body_str;
-    }
-    sig = generate_auth_sig_needfree(g_bdsc_engine->g_vendor_info->ak,\
-                        ts, g_bdsc_engine->g_vendor_info->sk);
-    content_length = strlen("{\"fc\":")+strlen(g_bdsc_engine->g_vendor_info->fc) +strlen("\"\"") +\
-                        strlen(",\"pk\":")+strlen(g_bdsc_engine->g_vendor_info->pk) +strlen("\"\"") +\
-                        strlen(",\"ak\":")+strlen(g_bdsc_engine->g_vendor_info->ak) +strlen("\"\"") +\
-                        strlen(",\"time_stamp\":")+ (int)log10(ts) + 1 +\
-                        strlen(",\"signature\":")+strlen(sig) + strlen("\"\"") +\
-                        strlen(tmp_str);
-                        strlen("}");
-    post_length = content_length + 256;
-    *post_buff = audio_calloc(1, post_length);
-    if (*post_buff == NULL) {
-        ERR_OUT(audio_calloc_fail, "audio calloc fail!!!");
-    }
-    cnt = snprintf(*post_buff, post_length,\
-                "POST %s HTTP/1.0\r\n"
-                "Content-Type: application/json\r\n"
-                "Content-Length: %d\r\n\r\n"
-                "{\"fc\":\"%s\",\"pk\":\"%s\",\"ak\":\"%s\",\"time_stamp\":%d,\"signature\":\"%s\"%s}",\
-                    uri,\
-                    content_length + 1,\
-                    g_bdsc_engine->g_vendor_info->fc,\
-                    g_bdsc_engine->g_vendor_info->pk,\
-                    g_bdsc_engine->g_vendor_info->ak,\
-                    ts,\
-                    sig,\
-                    tmp_str);
-    if (cnt < 0 || cnt >= post_length) {
-        ERR_OUT(snprintf_fail, "snprintf fail!!!");
-    }
-    free((void*)(sig));
-    return 0;
-
-snprintf_fail:
-    audio_free(*post_buff);
-    *post_buff = NULL;
-audio_calloc_fail:
-    free((void*)(sig));
-get_current_time_fail:
-    return -1;
-}
-
-int https_post_to_unit_server(const char *uri, const char *private_body_str, char **ret_data_out, size_t *data_out_len)
-{
-    char *post_buff = NULL;
-
-    if (generate_unit_post_string_need_free(&post_buff, uri, private_body_str)) {
-        ERR_OUT(ERR_RET, "%s|%d:generate_post_string_need_free fail", __func__, __LINE__);
-    }
-
-    ESP_LOGI(TAG, "%s", post_buff);
-    bdsc_send_https_post_sync((char *)g_bdsc_engine->cfg->auth_server, g_bdsc_engine->cfg->auth_port,
-                            (char *)server_root_cert_pem_start, server_root_cert_pem_end - server_root_cert_pem_start,
-                            post_buff, strlen(post_buff) + 1,
-                            ret_data_out, data_out_len);
-
-    audio_free(post_buff);
-    post_buff = NULL;
-    return 0;
-
-ERR_RET:
-    return -1;
-}
-
-int request_next_music(void)
-{
-    int ret = 0;
-#ifdef CONFIG_MIGU_MUSIC
-    ret = migu_request_next_music();
-#endif
-    return ret;
-}
+pls_handle_t* g_pls_handle = NULL;
 
 int active_music_license()
 {
@@ -227,35 +60,91 @@ int active_music_license()
     return ret;
 }
 
-static void next_music_callback( TimerHandle_t xTimer )
+void app_music_play_policy(music_queue_t pQueue_data);
+
+void next_song_callback(TimerHandle_t xTimer)
 {
+    music_t* current_music = pls_get_current_music(g_pls_handle);
     if (current_music == NULL) {
         return;
     }
     ESP_LOGI(TAG, "send next_task_handle notify");
-/* 
+/*
 * why not request for the next song directly
 * beacause it's going to pause 1&2 second when play url music, so request next song task run core 1, play task run core 2
 */
-    xTaskNotifyGive(next_task_handle);
+    xTaskNotifyGive(next_song_task_handle);
 }
 
-static void _clean_music_queue_data(music_queue_t pQueue_data)
+int next_song_user_cb(void *ctx)
 {
-    if (pQueue_data.data) {
-        audio_free(pQueue_data.data);
-        pQueue_data.data = NULL;
+    music_t* current_music = (music_t*)ctx;
+    if(current_music && current_music->is_big_data_analyse) {       //migu music need big data analysis
+        migu_big_data_event();
     }
-    if (pQueue_data.action_type) {
-        audio_free(pQueue_data.action_type);
-        pQueue_data.action_type = NULL;
+    if (ESP_ERR_AUDIO_NO_ERROR == audio_player_duration_get(&current_music->duration)) {
+        ESP_LOGE(TAG, "%s|%d: audio_player_duration_get = %d!!!", __func__, __LINE__,current_music->duration);
+    } else {
+        ESP_LOGE(TAG, "%s|%d: audio_player_duration_get no player instance!!!", __func__, __LINE__);
+    }
+    if (next_song_timer_handle != NULL) {
+        if(current_music->duration > SILENT_NEXT_TIME_EARLY) {
+            xTimerChangePeriod(next_song_timer_handle, (current_music->duration - SILENT_NEXT_TIME_EARLY) / portTICK_PERIOD_MS, 0);
+        } else {
+            xTimerChangePeriod(next_song_timer_handle, 1 + current_music->duration / portTICK_PERIOD_MS, 0);
+        }
+        xTimerStart(next_song_timer_handle,0);
+    } else {
+        ESP_LOGE(TAG, "%s|%d: next_music_timer_handle create fail!!!", __func__, __LINE__);
+    }
+    pls_set_current_music_player_state(g_pls_handle, RUNNING_STATE);
+
+    return 0;
+}
+
+void next_song_task(void *pvParameters)
+{
+    while (1) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        ESP_LOGI(TAG, "next song request");
+        migu_request_next_music();  //request next songs by migu_request_next_music for historical reasons at the moment
+        vTaskDelay(100);
+    }
+    vTaskDelete(NULL);
+}
+
+static music_type_t get_action_type(char *type)
+{
+    if (!type) {
+        return ERR_TYPE;
+    }
+    if (!strcmp(type, "asrnlp_tts")) {
+        return RAW_TTS;
+    // } else if (!strcmp(type, "asrnlp_url")) {
+    //     return ONLY_URL;
+    } else if (!strcmp(type, "asrnlp_mix")) {
+        return RAW_MIX;
+    } else if (!strcmp(type, "asrnlp_ttsurl")) {
+        return TTS_URL;
+    }
+    return ERR_TYPE;
+}
+
+static void pause_current_http_music_if_needed()
+{
+    audio_player_state_t st = {0};
+    audio_player_state_get(&st);
+    ESP_LOGI(TAG, "Playing media is 0x%x, status is %d", st.media_src, st.status);
+    if ((st.media_src == MEDIA_SRC_TYPE_MUSIC_HTTP) &&
+        (st.status == AUDIO_PLAYER_STATUS_RUNNING)) {
+        handle_play_cmd(CMD_HTTP_PLAY_PAUSE, NULL, 0);
+        pls_set_current_music_player_state(g_pls_handle, PAUSE_STATE);
     }
 }
 
 static void app_music_task(void *pvParameters)
 {
     music_queue_t pQueue_data;
-    audio_player_state_t st = {0};
 
     vTaskDelay(2000);
     if (!g_bdsc_engine->g_vendor_info->is_active_music_license) {
@@ -272,133 +161,317 @@ static void app_music_task(void *pvParameters)
     while (1) {
         if (g_music_queue_handle && xQueueReceive(g_music_queue_handle, &pQueue_data, portMAX_DELAY) == pdPASS) {
             switch (pQueue_data.type) {
-            case ID_MUSIC:
             case URL_MUSIC:
-                if (pQueue_data.action == CACHE_MUSIC) {     //cache next music
-                    if (current_music) {
-                        delete_music(current_music->next);
-                        if (pQueue_data.type == URL_MUSIC) {
-                            current_music->next = create_music(pQueue_data.type, pQueue_data.data);
-                        } else {
-                            current_music->next = get_music_by_id(pQueue_data.data);
-                        }
-
-                        _clean_music_queue_data(pQueue_data);
-                        continue;
-                    }
-                } else if (pQueue_data.action == NEXT_MUSIC && current_music && current_music->next) {   //play next music
-                    music_t *tmp = current_music;
-                    current_music = current_music->next;
-                    delete_music(tmp);
-                } else {              //play receive url music
-                    if(current_music) {
-                        delete_music(current_music->next);
-                        delete_music(current_music);
-                    }
-                    if (pQueue_data.type == URL_MUSIC) {
-                        current_music = create_music(pQueue_data.type, pQueue_data.data);
-                    } else {
-                        current_music = get_music_by_id(pQueue_data.data);
-                    }
-                }
-                if(pQueue_data.type == URL_MUSIC) {
-                    vTaskDelay(2000);      //wait for tts start play
+                ESP_LOGE(TAG, "===================> recv ID/URL music");
+                if (pQueue_data.action == CACHE_MUSIC) {       // 缓存下一首
+                    pls_cache_music(g_pls_handle, pQueue_data);
+                    continue;
+                } else if (pQueue_data.action == CHANGE_TO_NEXT_MUSIC ||  // 播放 migu 的过程中说 “下一首”
+                            pQueue_data.action == PLAY_MUSIC) {           // 一开始说“播放周杰伦的哥”
+                    pls_clean_list(g_pls_handle);
+                    pls_add_music_to_tail(g_pls_handle, pQueue_data);
                 }
                 break;
             case ALL_TYPE:
-                if (g_pre_player_need_resume) {
-                    g_pre_player_need_resume = false;
-                    handle_play_cmd(CMD_HTTP_PLAY_RESUME, NULL, 0);
-                    ESP_LOGI(TAG, "play CMD_HTTP_PLAY_RESUME");
-                    _clean_music_queue_data(pQueue_data);
-                    continue;
-                } else if (pQueue_data.action == NEXT_MUSIC && current_music && current_music->next) {   //play cache next music
-                    music_t *tmp = current_music;
-                    current_music = current_music->next;
-                    delete_music(tmp);
-                    ESP_LOGI(TAG, "play next music");
-                }  else {
-                    _clean_music_queue_data(pQueue_data);
-                    continue;
+                ESP_LOGE(TAG, "===================> recv ALL_TYPE");
+                /*
+                 * ALL_TYPE 有两种 action:
+                 * 1.  NEXT_MUSIC: 表示 播放结束了的
+                 * 2.  PLAY_MUSIC: 表示 需要续播的
+                 */
+                if (pQueue_data.action == NEXT_MUSIC) {    // 播放列表，一首播放完，自动播放下一首
+                    ESP_LOGI(TAG, "delete played music");
+                    pls_delete_head_music(g_pls_handle);
                 }
+                break;
+            case SPEECH_MUSIC:
+                ESP_LOGE(TAG, "===================> recv SPEECH_MUSIC");
+                pls_add_music_to_head(g_pls_handle, pQueue_data);
+                break;
+            case RAW_TTS_DATA:
+                ESP_LOGE(TAG, "===================> recv RAW_TTS_DATA");
+                break;
+            case TONE_MUSIC:
+                ESP_LOGE(TAG, "===================> recv TONE_MUSIC");
+                /* some randonly poped out music, such as bt_connected.
+                 * should pause previous http play if necessary
+                 */
+                pause_current_http_music_if_needed();
+                pls_add_music_to_head(g_pls_handle, pQueue_data);
+                break;
+            case MQTT_URL:
+                ESP_LOGE(TAG, "===================> recv MQTT_URL");
+                pls_clean_list(g_pls_handle);
+                pls_add_music_to_head(g_pls_handle, pQueue_data);
+                break;
+            case A2DP_PLAY:
+                ESP_LOGE(TAG, "===================> recv A2DP_PLAY");
+                pls_clean_list(g_pls_handle);
+                pls_add_music_to_head(g_pls_handle, pQueue_data);
+                break;
+            case ACTIVE_TTS:
+                ESP_LOGE(TAG, "===================> recv ACTIVE_TTS");
+                pls_add_music_to_head(g_pls_handle, pQueue_data);
+                break;
+            case MUSIC_CTL_CONTINUE:
+                ESP_LOGE(TAG, "===================> recv MUSIC_CTL_CONTINUE");
+                pls_add_music_to_head(g_pls_handle, pQueue_data);
+                break;
+            case MUSIC_CTL_PAUSE:
+                ESP_LOGE(TAG, "===================> recv MUSIC_CTL_PAUSE");
+                pls_add_music_to_head(g_pls_handle, pQueue_data);
+                break;
+            case MUSIC_CTL_STOP:
+                ESP_LOGE(TAG, "===================> recv MUSIC_CTL_STOP");
+                pls_add_music_to_head(g_pls_handle, pQueue_data);
                 break;
             default:
                 break;
             }
+            
+            app_music_play_policy(pQueue_data);
 
-            _clean_music_queue_data(pQueue_data);
-
-            if (current_music && current_music->url) {
-                audio_player_state_get(&st);
-                while ((st.media_src != MEDIA_SRC_TYPE_MUSIC_HTTP) && st.status == AUDIO_PLAYER_STATUS_RUNNING) {
-                    ESP_LOGI(TAG, "%s|%d:It's AUDIO_STATUS_RUNNING", __func__,__LINE__);
-                    vTaskDelay(200);
-                    audio_player_state_get(&st);
-                }
-#ifdef CONFIG_MIGU_MUSIC
-                /*The start time of the song is equal to the end time of the previous song*/
-                send_migu_event_queue(END_EVENT);
-                if(current_music->type == ID_MUSIC) {
-                    send_migu_event_queue(MIGU_START_EVENT);
-                }
-#endif
-                handle_play_cmd(CMD_HTTP_PLAY_START, (uint8_t *)current_music->url, strlen(current_music->url) + 1);
-                set_music_player_state(RUNNING_STATE);
-                vTaskDelay(100);
-                if (ESP_ERR_AUDIO_NO_ERROR == audio_player_duration_get(&current_music->duration)) {
-                    ESP_LOGE(TAG, "%s|%d: audio_player_duration_get = %d!!!", __func__, __LINE__,current_music->duration);
-                } else {
-                    ESP_LOGE(TAG, "%s|%d: audio_player_duration_get no player instance!!!", __func__, __LINE__);
-                }
-                if (next_music_timer_handle != NULL) {
-                    if(current_music->duration > SILENT_NEXT_TIME_EARLY) {
-                        xTimerChangePeriod(next_music_timer_handle, (current_music->duration - SILENT_NEXT_TIME_EARLY) /portTICK_PERIOD_MS, 0);
-                    }
-                    xTimerStart(next_music_timer_handle,0);
-                } else {
-                   ESP_LOGE(TAG, "%s|%d: next_music_timer_handle create fail!!!", __func__, __LINE__);
-                }
-            }
         }
         vTaskDelay(100);
     }
     vTaskDelete(NULL);
 }
 
-
-static void next_task(void *pvParameters)
+extern int g_is_getting_url;
+int get_url_by_id(unit_data_t *unit_data, music_queue_t *music_data, bool is_async)
 {
-    while (1) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        ESP_LOGI(TAG, "next music request");
-        request_next_music();
-        vTaskDelay(100);
+    char *url_value = NULL;
+    char recvd_url[1024] = {0};
+    char *id_str = NULL;
+    char *custom_reply_value = NULL;
+
+    music_data->type = URL_MUSIC;
+    custom_reply_value = unit_data->custom_reply.value;
+    if (!custom_reply_value || !custom_reply_value[0]) {
+        ERR_OUT(ERR_RET, "custom_reply is null");
     }
-    vTaskDelete(NULL);
+    if (is_async) {
+        if (g_is_getting_url) {
+            ESP_LOGE(TAG, "get url task is running, wait...");
+            vTaskDelay(3000);
+            if (g_is_getting_url) {
+                ESP_LOGE(TAG, "get url task is still running, something went wrong???");
+                return -1;
+            }
+        }
+        strncpy(g_migu_music_id_in, custom_reply_value, sizeof(g_migu_music_id_in));
+        xEventGroupClearBits(g_get_url_evt_group, GET_URL_REQUEST | GET_URL_SUCCESS | GET_URL_FAIL);
+        xEventGroupSetBits(g_get_url_evt_group, GET_URL_REQUEST);
+        music_data->data = NULL;
+    } else {
+        id_str = (char*)custom_reply_value;
+        if (migu_get_url_by_id(id_str, recvd_url, sizeof(recvd_url))) {
+            ERR_OUT(ERR_RET, "migu_get_url_by_id fail");
+        }
+        if (!(url_value = audio_strdup(recvd_url))) {
+            ERR_OUT(ERR_RET, "malloc fail");
+        }
+        music_data->data = url_value;
+    }
+
+    return 0;
+ERR_RET:
+    return -1;
+}
+
+void get_action_by_intent(unit_data_t *unit_data, music_queue_t *music_data)
+{
+    if (!strcmp(unit_data->intent, "CHANGE_TO_NEXT")) {
+        music_data->action  = CHANGE_TO_NEXT_MUSIC;
+    } else if (!strcmp(unit_data->intent, "CACHE_MUSIC")) {
+        music_data->action  = CACHE_MUSIC;
+    } else {
+        music_data->action  = PLAY_MUSIC;
+    }
+}
+
+void music_queue_policy_send(QueueHandle_t xQueue, const void *pvItemToQueue)
+{
+    music_t *current_music = pls_get_current_music(g_pls_handle);
+    music_queue_t pQueue_data;
+    music_queue_t *music_data = (music_queue_t*)pvItemToQueue;
+
+    /*
+     * policy 0: if cache music, bypass
+     */
+    if (current_music && music_data->action == CACHE_MUSIC) {
+        ESP_LOGE(TAG, "cache music, bypass");
+    }
+
+    /*
+     * policy 1: flush all tts packages if necessary
+     */
+    else if (current_music && music_data->type != RAW_TTS_DATA && 
+            (current_music->action_type == RAW_TTS ||
+            current_music->action_type == RAW_MIX)) {
+        ESP_LOGE(TAG, "!!!! flush music queue !!!!");
+        pls_dump(g_pls_handle);
+        while (xQueueReceive(xQueue, &pQueue_data, 0) == pdTRUE) {
+            raw_data_t *raw = NULL;
+            if (pQueue_data.type == RAW_TTS_DATA) {
+                raw = (raw_data_t*)pQueue_data.data;
+                audio_free(raw->raw_data);
+            }
+            if (pQueue_data.data) {
+                audio_free(pQueue_data.data);
+            }
+        }
+    }
+
+    /*
+     * normal send
+     */
+    xQueueSend(xQueue, pvItemToQueue, 0);
+}
+
+void send_music_queue(music_type_t type, void *pdata)
+{
+    unit_data_t *unit_data = (unit_data_t*)pdata;
+    music_queue_t music_data;
+    music_play_state_t current_state;
+    bool need_async = true;
+    
+    //ESP_LOGI(TAG, "==> send_music_queue");
+    current_state = pls_get_current_music_player_state(g_pls_handle);
+    //ESP_LOGD(TAG, "cur state: %d", current_state);
+
+    if (type != ALL_TYPE && !pdata) {
+        ERR_OUT(ERR_RET, "pdata is null");
+    }
+    memset(&music_data, 0, sizeof(music_queue_t));
+    music_data.type = type;
+    switch (type) {
+    case ALL_TYPE:
+        if (PAUSE_STATE == current_state) { // paused, need resume
+            music_data.action  = PLAY_MUSIC;
+        } else {
+            music_data.action  = NEXT_MUSIC;
+        }
+        break;
+#ifdef CONFIG_MIGU_MUSIC
+    case ID_MUSIC:
+        get_action_by_intent(pdata, &music_data);
+        if (music_data.action == CACHE_MUSIC) {
+            // cache music dont need async mode
+            need_async = false;
+        }
+        if (get_url_by_id(pdata, &music_data, need_async) < 0) {
+            ERR_OUT(ERR_RET, "get_url_by_id fail");
+        }
+        music_data.user_cb = next_song_user_cb; // ID/URL MUSIC need auto cache next song logic
+        music_data.is_big_data_analyse = true;  //enable big data analyse
+        music_data.action_type = get_action_type(unit_data->action_type);
+        break;
+#endif
+    case URL_MUSIC:
+        get_action_by_intent(pdata, &music_data);
+        music_data.user_cb = next_song_user_cb; // ID/URL MUSIC need auto cache next song logic
+    case SPEECH_MUSIC:
+        music_data.action_type = get_action_type(unit_data->action_type);
+        if (!music_data.data && unit_data->custom_reply.value) {
+            music_data.data = audio_strdup(unit_data->custom_reply.value);
+        }
+        break;
+    case RAW_TTS_DATA:
+        music_data.data = pdata;
+        break;
+    case TONE_MUSIC:
+        music_data.data = pdata;
+        break;
+    case MQTT_URL:
+        music_data.data = pdata;
+        break;
+    case A2DP_PLAY:
+        music_data.data = pdata;
+        break;
+    case ACTIVE_TTS:
+        music_data.data = pdata;
+        break;
+    case MUSIC_CTL_CONTINUE:
+        music_data.data = NULL;
+        break;
+    case MUSIC_CTL_PAUSE:
+        music_data.data = NULL;
+        break;
+    case MUSIC_CTL_STOP:
+        music_data.data = NULL;
+        break;
+    default:
+        break;
+    }
+
+    ESP_LOGI(TAG, "==> send_music_queue,  action: %d, type: %d, data: %s, action_type:%d", \
+        music_data.action, music_data.type, \
+        (music_data.data ? music_data.data : "NULL"), \
+        music_data.action_type);
+    //xQueueSend(g_music_queue_handle, (void*)&music_data, 0);
+    music_queue_policy_send(g_music_queue_handle, (void*)&music_data);
+
+ERR_RET:
+    return;
 }
 
 int app_music_init(void)
 {
+    int ret = -1;
     audio_thread_t app_music_task_handle = NULL;
-    g_music_queue_handle = xQueueCreate(3, sizeof(music_queue_t));
-    int ret = app_task_regist(APP_TASK_ID_APP_MUSIC, app_music_task, NULL, &app_music_task_handle);
+    QueueHandle_t *music_queue_buffer = audio_calloc(1, sizeof(StaticQueue_t));
+    if (!music_queue_buffer) {
+        ERR_OUT(ERR_CALLOC1, "calloc music_queue_buffer fail");
+    }
+    uint8_t *music_queue_storage = audio_calloc(1, MUSIC_QUEUE_ITEM_NUM * sizeof(music_queue_t));
+    if (!music_queue_storage) {
+        ERR_OUT(ERR_CALLOC2, "calloc music_queue_storage fail");
+    }
+    if (!(g_music_queue_handle = xQueueCreateStatic(MUSIC_QUEUE_ITEM_NUM, sizeof(music_queue_t), music_queue_storage, music_queue_buffer))) {
+        ERR_OUT(ERR_CREAT, "xQueueCreateStatic fail\n");
+    }
+    
+    ret = app_task_regist(APP_TASK_ID_APP_MUSIC, app_music_task, NULL, &app_music_task_handle);
     if (ret == ESP_FAIL) {
-        ERR_OUT(thred_create_fail1, "Couldn't create app_music_task");
+        ERR_OUT(DEL_QUE, "app_music_task create fail");
     }
 
-    ret = app_task_regist(APP_TASK_ID_NEXT_MUSIC, next_task, NULL, &next_task_handle);
-    if (ret == ESP_FAIL) {
-        ERR_OUT(thred_create_fail2, "Couldn't create next_task");
+    if (!(g_pls_handle = pls_create())) {
+        ERR_OUT(DEL_MUSIC_TSK, "pls_create fail");
     }
-    next_music_timer_handle = xTimerCreate("next_music_timer", (10 * 1000 / portTICK_PERIOD_MS), pdFALSE, (void *)0, next_music_callback);
+
+    /* task to auto change next music */
+    ret = app_task_regist(APP_TASK_ID_NEXT_MUSIC, next_song_task, NULL, &next_song_task_handle);
+    if (ret == ESP_FAIL) {
+        ERR_OUT(DEL_PLS, "Couldn't create next_task");
+    }
+
+    /* timer to issue next music request */
+    next_song_timer_handle = xTimerCreate("next_music_timer", (10 * 1000 / portTICK_PERIOD_MS), pdFALSE, (void *)0, next_song_callback);
+    if (!next_song_timer_handle) {
+        ERR_OUT(DEL_NEXT_SONG, "Couldn't create next_song_timer");
+    }
+
 #ifdef CONFIG_MIGU_MUSIC
-    migu_music_init();
+    ret = migu_music_service_init();
 #endif
+
+    g_app_music_init_finish_flag = true;
     return 0;
 
-thred_create_fail2:
+DEL_NEXT_SONG:
+    vTaskDelete(next_song_task_handle);
+DEL_PLS:
+    pls_destroy(g_pls_handle);
+DEL_MUSIC_TSK:
     vTaskDelete(app_music_task_handle);
-thred_create_fail1:
+DEL_QUE:
     vQueueDelete(g_music_queue_handle);
+ERR_CREAT:
+    audio_free(music_queue_storage);
+ERR_CALLOC2:
+    audio_free(music_queue_buffer);
+ERR_CALLOC1:
     return -1;
 }

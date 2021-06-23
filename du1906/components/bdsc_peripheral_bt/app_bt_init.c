@@ -28,6 +28,7 @@
 #include "a2dp_stream.h"
 #include "ble_gatts_module.h"
 #include "bdsc_tools.h"
+#include "bluetooth_service.h"
 
 static const char *TAG = "APP_BT_INIT";
 
@@ -99,6 +100,35 @@ esp_err_t app_bt_start(void)
     }
     return ret;
 }
+
+extern esp_periph_handle_t g_bt_periph;
+
+esp_err_t app_bt_pause(void)
+{
+    ESP_LOGI(TAG, "bt pause");
+    if (bt_connected_flag == true) {
+        periph_bluetooth_pause(g_bt_periph);
+    }
+    return 0;
+}
+
+esp_err_t app_bt_continue(void)
+{
+    ESP_LOGI(TAG, "bt continue");
+    if (bt_connected_flag == true) {
+        periph_bluetooth_play(g_bt_periph);
+    }
+    return 0;
+}
+
+// esp_err_t app_bt_stop(void)
+// {
+//     esp_err_t ret = ESP_OK;
+//     ESP_LOGI(TAG, "bt stop");
+//     if (bt_connected_flag == true) {
+//         periph_bluetooth_stop(g_bt_periph);
+//     }
+// }
 
 void app_bluetooth_deinit(void)
 {

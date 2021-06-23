@@ -88,6 +88,8 @@ int my_i2s_write(audio_element_handle_t self, char *buffer, int len, TickType_t 
     return bytes_written;
 }
 
+esp_periph_handle_t g_bt_periph;
+
 static esp_audio_handle_t setup_app_esp_audio_instance(esp_audio_cfg_t *cfg, esp_a2d_cb_t a2dp_cb)
 {
     if (cfg == NULL) {
@@ -230,6 +232,7 @@ esp_err_t app_player_init(QueueHandle_t que, audio_player_evt_callback cb, esp_p
     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
 
     esp_periph_handle_t bt_periph = app_bluetooth_init(set);
+    g_bt_periph = bt_periph;
 
     esp_audio_cfg_t default_cfg = DEFAULT_ESP_AUDIO_CONFIG();
     default_cfg.vol_handle = board_handle->audio_hal;

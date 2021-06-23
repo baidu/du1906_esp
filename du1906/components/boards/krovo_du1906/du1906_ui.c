@@ -21,6 +21,8 @@
 #include "app_voice_control.h"
 #include "tas5805m.h"
 #include "app_music.h"
+#include "app_bt_init.h"
+
 #define  TAG  "KROVO_DU1906_UI"
 
 extern bool g_print_task_status;
@@ -197,8 +199,11 @@ esp_err_t audio_board_pa_exit_deep_sleep(void)
  * NOTE: you can delete it if don't use user unit skill
  * *********************************************************************/
 enum {     //define user unit code
-    USER_CTL_MUSIC_PAUSE = 0,
-    USER_CTL_MUSIC_CONTINUE,
+    USER_CTL_MUSIC_CONTINUE = 0,
+    USER_CTL_MUSIC_PAUSE,
+    USER_CTL_MUSIC_STOP,
+    USER_CTL_OPEN_BT,
+    USER_CTL_CLOSE_BT,
 };
 
 /**
@@ -209,15 +214,28 @@ enum {     //define user unit code
 void user_unit_cmd_handle(unit_data_t *pdata, uint32_t code)
 {
     switch (code) {
-    case USER_CTL_MUSIC_PAUSE:
-        set_music_player_state(PAUSE_STATE);
-        g_pre_player_need_resume = false;
-        ESP_LOGW(TAG, "USER_CTL_MUSIC_PAUSE");
+    case USER_CTL_OPEN_BT:
+        ESP_LOGW(TAG, "USER_CTL_OPEN_BT");
+        app_bt_start();
+        send_music_queue(SPEECH_MUSIC, pdata);
+        break;
+    case USER_CTL_CLOSE_BT:
+        ESP_LOGW(TAG, "USER_CTL_CLOSE_BT");
+        bdsc_engine_close_bt();
+        app_bt_stop(g_bd_addr);
+        send_music_queue(SPEECH_MUSIC, pdata);
         break;
     case USER_CTL_MUSIC_CONTINUE:
-        set_music_player_state(RUNNING_STATE);
-        g_pre_player_need_resume = true;
         ESP_LOGW(TAG, "USER_CTL_MUSIC_CONTINUE");
+        send_music_queue(MUSIC_CTL_CONTINUE, pdata);
+        break;
+    case USER_CTL_MUSIC_PAUSE:
+        ESP_LOGW(TAG, "USER_CTL_MUSIC_PAUSE");
+        send_music_queue(MUSIC_CTL_PAUSE, pdata);
+        break;
+    case USER_CTL_MUSIC_STOP:
+        ESP_LOGW(TAG, "USER_CTL_MUSIC_STOP");
+        send_music_queue(MUSIC_CTL_STOP, pdata);
         break;
     default:
         ESP_LOGW(TAG, "UNKOWN CMD");
@@ -227,8 +245,11 @@ void user_unit_cmd_handle(unit_data_t *pdata, uint32_t code)
 
 unit_data_t g_user_unit_data[] = {
       /* unit_code                intend        origin    action_type    { custom_reply  }  slot number {slots   (flexible array)            }  */
-    {USER_CTL_MUSIC_PAUSE,     "DEV_ACTION", "1035789", NO_CMP_STR, {NO_CMP_STR, NO_CMP_STR}, 1, {{"user_action", "PAUSE"}}},
     {USER_CTL_MUSIC_CONTINUE,  "DEV_ACTION", "1035789", NO_CMP_STR, {NO_CMP_STR, NO_CMP_STR}, 1, {{"user_action", "CONTINUE"}}},
+    {USER_CTL_MUSIC_PAUSE,     "DEV_ACTION", "1035789", NO_CMP_STR, {NO_CMP_STR, NO_CMP_STR}, 1, {{"user_action", "PAUSE"}}},
+    {USER_CTL_MUSIC_STOP,      "DEV_ACTION", "1035789", NO_CMP_STR, {NO_CMP_STR, NO_CMP_STR}, 1, {{"user_action", "STOP"}}},
+    {USER_CTL_OPEN_BT,         "DEV_ACTION", "1035789", NO_CMP_STR, {NO_CMP_STR, NO_CMP_STR}, 2, {{"user_action", "ON"}, {"user_func_bluetooth", "BLUETOOTH"}}},
+    {USER_CTL_CLOSE_BT,        "DEV_ACTION", "1035789", NO_CMP_STR, {NO_CMP_STR, NO_CMP_STR}, 2, {{"user_action", "OFF"}, {"user_func_bluetooth",  "BLUETOOTH"}}},
 };
 
 int g_user_unit_array_num = sizeof(g_user_unit_data) / sizeof(g_user_unit_data[0]);    //you must init g_user_unit_array_num if using user unit

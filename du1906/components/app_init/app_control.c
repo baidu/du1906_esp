@@ -48,8 +48,9 @@
 #include "app_control.h"
 #include "rom/rtc.h"
 #include "wifi_ssid_manager.h"
-#include "app_music.h"
-#include "app_voice_control.h"
+// #include "app_voice_control.h"
+// #include "app_music.h"
+#include "play_list.h"
 
 #if CONFIG_CUPID_BOARD_V2
 static const char *TAG = "CUPID_APP";
@@ -93,10 +94,8 @@ void audio_player_callback(audio_player_state_t *audio, void *ctx)
     ESP_LOGE(TAG, "AUDIO_PLAYER_CALLBACK send OK, status:%d, err_msg:%x, media_src:%x, ctx:%p",
              audio->status, audio->err_msg, audio->media_src, ctx);
 #ifdef CONFIG_ENABLE_MUSIC_UNIT
-    extern void send_music_queue(music_type_t type, unit_data_t *pdata);
     if(audio->status == AUDIO_PLAYER_STATUS_FINISHED && \
-        audio->media_src == MEDIA_SRC_TYPE_MUSIC_HTTP && \
-        RUNNING_STATE == get_music_player_state()) {
+        audio->media_src == MEDIA_SRC_TYPE_MUSIC_HTTP) {
         send_music_queue(ALL_TYPE, NULL);         //start playing next song or resuming after playing finish
     }
 #endif
@@ -163,14 +162,7 @@ void app_init(void)
 {
     // Clear the debug message
     esp_log_level_set("*", ESP_LOG_INFO);
-    esp_log_level_set("A2DP_STREAM", ESP_LOG_INFO);
-    esp_log_level_set("AUDIO_ELEMENT", ESP_LOG_DEBUG);
-    esp_log_level_set("AUDIO_PIPELINE", ESP_LOG_INFO);
-    esp_log_level_set("HTTP_STREAM", ESP_LOG_INFO);
     esp_log_level_set("spi_master", ESP_LOG_WARN);
-    esp_log_level_set("ESP_AUDIO_CTRL", ESP_LOG_DEBUG);
-    esp_log_level_set("ESP_AUDIO_TASK", ESP_LOG_DEBUG);
-    esp_log_level_set("AUDIO_MANAGER", ESP_LOG_DEBUG);
 
 #if CONFIG_CUPID_BOARD_V2
     // Only care about power on case and let watchdog or other soft resets work.

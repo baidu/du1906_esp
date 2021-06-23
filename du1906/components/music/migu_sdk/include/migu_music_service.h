@@ -18,19 +18,22 @@
 extern "C" {
 #endif
 
-typedef enum {
-    MIGU_START_EVENT,
-    END_EVENT,
-} migu_time_event_type;
-
-int migu_music_init(void);
-int get_migu_url(const char *id, char *url, uint32_t max_len);
-
-void send_migu_event_queue(migu_time_event_type event_type);
-
-int migu_request_next_music(void);
+int migu_music_service_init();
 
 int migu_active_music_license();
+
+void migu_big_data_event(void);
+
+/*
+ * bref: loop fetch url by id interface
+ */
+extern EventGroupHandle_t g_get_url_evt_group;
+#define GET_URL_REQUEST     (BIT0)
+#define GET_URL_SUCCESS     (BIT1)
+#define GET_URL_FAIL        (BIT2)
+
+extern char g_migu_music_id_in[1024];
+extern char g_migu_music_url_out[1024];
 
 #ifdef __cplusplus
 }

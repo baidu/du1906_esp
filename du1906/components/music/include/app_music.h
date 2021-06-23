@@ -14,41 +14,79 @@
 #ifndef __APP_MUSIC__H
 #define __APP_MUSIC__H
 
+#include <inttypes.h>
+#include "cJSON.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_system.h"
+#include "esp_spi_flash.h"
+#include "freertos/event_groups.h"
+#include "esp_event_loop.h"
+#include "esp_wifi.h"
+#include "nvs_flash.h"
+#include <string.h>
+#ifdef CONFIG_MIGU_MUSIC
+#include "migu_music_service.h"
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef enum {
-    URL_MUSIC,
-    ID_MUSIC,
-    ALL_TYPE,
-} music_type_t;
-
-typedef enum {
     PLAY_MUSIC,
     NEXT_MUSIC,
     CACHE_MUSIC,
+    CHANGE_TO_NEXT_MUSIC,
     UNKNOW_ACTION,
 } music_action_t;
 
-typedef enum _music_play_state {
-    RUNNING_STATE,
-    STOP_STATE,
-    PAUSE_STATE,
-    UNKNOW_STATE,
-} music_play_state_t;
+typedef enum {
+    ID_MUSIC,
+    URL_MUSIC,
+    ALL_TYPE,
+    SPEECH_MUSIC,
+    RAW_TTS_DATA,
+    TONE_MUSIC,
+    MQTT_URL,
+    A2DP_PLAY,
+    ACTIVE_TTS,
+    MUSIC_CTL_CONTINUE,
+    MUSIC_CTL_PAUSE,
+    MUSIC_CTL_STOP,
+} music_type_t;
+
+typedef enum {
+    RAW_TTS,
+    RAW_MIX,
+    TTS_URL,
+    ERR_TYPE,
+} action_type_t;
+
+typedef struct {
+    uint8_t *raw_data;
+    size_t  raw_data_len;
+    bool    is_end;
+} raw_data_t;
+
+#ifndef _music_user_cb_
+typedef int (*music_user_cb)(void *ctx);
+#endif
 
 typedef struct _music_queue {
     music_action_t  action;
     music_type_t    type;
     char            *data;
-    char            *action_type;
+    uint8_t         is_big_data_analyse;
+    action_type_t   action_type;
+    music_user_cb   user_cb;
 } music_queue_t;
 
 extern xQueueHandle g_music_queue_handle;
-void set_music_player_state(music_play_state_t state);
-music_play_state_t get_music_player_state();
-int https_post_to_unit_server(const char *uri, const char *private_body_str, char **ret_data_out, size_t *data_out_len);
+
+void send_music_queue(music_type_t type, void *pdata);
+
 #ifdef __cplusplus
 }
 #endif
