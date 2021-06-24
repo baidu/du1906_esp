@@ -24,7 +24,7 @@ extern "C" {
 #define bds_true pdTRUE
 #define bds_false pdFALSE
 
-#define BDS_ERR(format, ...) ESP_LOGE(TAG, "%s|%d" format, __FILE__, __LINE__, ##__VA_ARGS__)
+#define BDS_ERR(format, ...) ESP_LOGE(TAG, format, ##__VA_ARGS__)
 #define ERR_OUT(_dest, format, ...)     \
     do {                                     \
         BDS_ERR(format, ##__VA_ARGS__); \

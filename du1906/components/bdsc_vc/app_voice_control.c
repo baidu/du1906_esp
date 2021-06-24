@@ -235,10 +235,7 @@ void unit_cmd_handle(unit_data_t *pdata, uint32_t code)
 {
     int player_volume = 0;
     static int pre_player_volume = 0;
-    if (g_bdsc_engine->in_duplex_mode) {
-        ESP_LOGE(TAG, "in duplex mode, skip UNIT cmd");
-        return;
-    }
+
     switch (code) {
     case VOICE_CTL_OPEN_BT:
         ESP_LOGW(TAG, "APP_VOICE_CTL_CMD_OPEN_BT");

@@ -85,6 +85,8 @@ typedef struct _music_queue {
 
 extern xQueueHandle g_music_queue_handle;
 
+int app_music_init(void);
+
 void send_music_queue(music_type_t type, void *pdata);
 
 #ifdef __cplusplus

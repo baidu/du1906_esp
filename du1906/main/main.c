@@ -25,91 +25,24 @@
 #include "bdsc_json.h"
 #include "audio_mem.h"
 #include "bdsc_tools.h"
-#include "cupid_device_manager.h"
 #include "app_bt_init.h"
 #ifdef CONFIG_CLOUD_LOG
 #include "app_cloud_log.h"
 #endif
 #include "bdsc_ota_partitions.h"
+#include "app_music.h"
 
 #define TAG "MAIN"
-cupid_device_manager_t g_dm;
-
-cJSON* create_dm_upload_msg(int trans_num, const char *type, cJSON *body, bool is_active);
-static char* create_asr_block_word_response_string(const char *words)
-{
-    cJSON *rsp = NULL, *wordsJ = NULL;
-
-    if (!(rsp = create_dm_upload_msg(get_trannum_up(), "asrresult", NULL, true))) {
-        ESP_LOGE(TAG, "create_dm_response error");
-        return NULL;
-    }
-    wordsJ = BdsJsonObjectNew();
-    BdsJsonObjectAddString(wordsJ, "words", words);
-    BdsJsonObjectAdd(rsp, "body", wordsJ);
-    char *rsp_str = BdsJsonPrintUnformatted(rsp);
-    if (!rsp_str) {
-        ESP_LOGE(TAG, "cJSON_PrintUnformatted fail");
-        BdsJsonPut(rsp);
-        return NULL;
-    }
-
-    BdsJsonPut(rsp);
-    return rsp_str;
-}
-
-static char* create_duplex_mode_status_string(int in_or_out)
-{
-    cJSON *rsp = NULL;
-
-    if (!(rsp = create_dm_upload_msg(get_trannum_up(), "TVMode", NULL, true))) {
-        ESP_LOGE(TAG, "create_dm_response error");
-        return NULL;
-    }
-    BdsJsonObjectAddInt(rsp, "code", in_or_out);
-    char *rsp_str = BdsJsonPrintUnformatted(rsp);
-    if (!rsp_str) {
-        ESP_LOGE(TAG, "cJSON_PrintUnformatted fail");
-        BdsJsonPut(rsp);
-        return NULL;
-    }
-
-    BdsJsonPut(rsp);
-    return rsp_str;
-}
-
 
 bool need_skip_current_playing()
 {
     /* 用户在某些特定应用场景下需要跳过当前session的 asr tts 处理 */
-    /* 情况一：当前拦截到 “asr”拦截词，则需要退出当前的session */
-    if (g_bdsc_engine->current_asr_words &&
-        g_bdsc_engine->asr_block_words &&
-        strstr(g_bdsc_engine->current_asr_words, g_bdsc_engine->asr_block_words)) {
-        
-        ESP_LOGI(TAG, "skip asr_block tts..");
-        return true;
-    }
-    // case 2: app want skip current asr-tts session
-    /* 情况二：app 希望跳过当前一次的 asr-tts session，比如“全双工”最后一次的非 TV_ACTION query */
     if (g_bdsc_engine->skip_tts_playing_once) {
         return true;
     }
     return false;
 }
 
-static bool _check_dumplex_mode_st(cJSON *json)
-{
-    char *origin_str = NULL;
-
-    if ((origin_str = BdsJsonObjectGetString(json, "origin")) &&
-        (!strncmp(origin_str, "1016074", strlen("1016074"))) &&
-        g_bdsc_engine->duplex_mode_function_enable) {
-        
-        return true;
-    }
-    return false;
-}
 #ifdef CONFIG_CLOUD_LOG
 esp_err_t cloud_print_on();
 static void start_log_upload(int level)
@@ -132,6 +65,7 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
 {
     cJSON *json = NULL;
     char *resp_str = NULL;
+    char *asr_result_str = NULL;
     
     switch (evt->event_id) {
     case BDSC_EVENT_ERROR:
@@ -172,20 +106,7 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
         }
         return BDSC_CUSTOM_DESIRE_DEFAULT;
     case BDSC_EVENT_ON_WAKEUP:
-        /* 每次唤醒，退出全双工 */
-        if (g_bdsc_engine->in_duplex_mode) {
-            ESP_LOGI(TAG, "early EXIT duplex mode!");
-            if (xTimerStop(g_bdsc_engine->duplex_timer, 10 / portTICK_PERIOD_MS) != pdPASS) {
-                ESP_LOGE(TAG, "Can not delete duplex timer, must do something!");
-            }
-            g_bdsc_engine->in_duplex_mode = 0;
-
-            if ((resp_str = create_duplex_mode_status_string(0))) {
-                bdsc_engine_channel_data_upload((uint8_t *)resp_str, strlen(resp_str) + 1);
-                free(resp_str);
-                display_service_set_pattern(g_disp_serv, DISPLAY_PATTERN_MUTE_OFF, 0);
-            }
-        }
+        /* 每次唤醒事件的回调 */
         return BDSC_CUSTOM_DESIRE_DEFAULT;
     case BDSC_EVENT_ON_ASR_RESULT:
         ESP_LOGI(TAG, "==> Got BDSC_EVENT_ON_ASR_RESULT");
@@ -219,72 +140,34 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
          * TIPS: 随 ASR 一起下发的TTS语音流，由SDK自动播放，暂时不对用户开放。
          */
         bdsc_event_data_t *asr_result = (bdsc_event_data_t *)evt->data;
-        if (!asr_result->buffer) {
+        if (!(asr_result_str = (char *)asr_result->buffer)) {
             ESP_LOGE(TAG, "BUG!!!\n");
             return BDSC_CUSTOM_DESIRE_DEFAULT;
         }
-        ESP_LOGI(TAG, "========= asr result %s", (char *)asr_result->buffer);
+        ESP_LOGI(TAG, "========= asr result %s", asr_result_str);
 
-        if (!(json = BdsJsonParse((const char *)asr_result->buffer))) {
-            ESP_LOGE(TAG, "json format error");
-            return BDSC_CUSTOM_DESIRE_SKIP_DEFAULT;
-        }
-        int err_value;
-        if (-1 == BdsJsonObjectGetInt(json, "err_no", &err_value)) {
-            ESP_LOGE(TAG, "json format error");
-            BdsJsonPut(json);
-            return BDSC_CUSTOM_DESIRE_SKIP_DEFAULT;
-        }
-        /* 如果处在全双工模式，禁止播放 3005 的提示音 */
-        if (err_value == -3005 || err_value == -3003) {
-            if (g_bdsc_engine->in_duplex_mode || need_skip_current_playing()) {
-                // in duplex mode, dont play hint
-            } else {
-                bdsc_play_hint(BDSC_HINT_NOT_FIND);
-            }
-            BdsJsonPut(json);
-            return BDSC_CUSTOM_DESIRE_DEFAULT;
-        }
-
-        /* 把当前的asr识别结果保存起来，后面要用 */
-        if (g_bdsc_engine->current_asr_words) {
-            free(g_bdsc_engine->current_asr_words);
-            g_bdsc_engine->current_asr_words = NULL;
-        }
-        g_bdsc_engine->current_asr_words = audio_strdup((char *)asr_result->buffer);
-        BdsJsonPut(json);
-#if CONFIG_CUPID_BOARD_V2
-        /* asr拦截：在当前的 asr 结果中查询是否包含拦截词，如果包含，就mqtt推送一条消息 */
-        if (g_bdsc_engine->asr_block_words && strstr((char *)g_bdsc_engine->current_asr_words, g_bdsc_engine->asr_block_words)) {
-            ESP_LOGI(TAG, "catch asr block word!!");
-            if ((resp_str = create_asr_block_word_response_string(g_bdsc_engine->asr_block_words))) {
-                bdsc_engine_channel_data_upload((uint8_t *)resp_str, strlen(resp_str) + 1);
-                free(resp_str);
-            }
-        }
-#endif
 #ifdef CONFIG_CLOUD_LOG
-        if(strstr((char *)g_bdsc_engine->current_asr_words,"打开云端调试日志") != NULL)
+        if(strstr(asr_result_str,"打开云端调试日志") != NULL)
         {
             ESP_LOGI(TAG, "set level 打开云端调试日志");
             start_log_upload(ESP_LOG_DEBUG);
         }
-        else if(strstr((char *)g_bdsc_engine->current_asr_words,"打开云端信息日志") != NULL)
+        else if(strstr(asr_result_str,"打开云端信息日志") != NULL)
         {
             ESP_LOGI(TAG, "set level 打开云端信息日志");
             start_log_upload(ESP_LOG_INFO);
         }
-        else if(strstr((char *)g_bdsc_engine->current_asr_words,"打开云端警告日志") != NULL)
+        else if(strstr(asr_result_str,"打开云端警告日志") != NULL)
         {
             ESP_LOGI(TAG, "set level 打开云端警告日志");
             start_log_upload(ESP_LOG_WARN);
         }
-        else if(strstr((char *)g_bdsc_engine->current_asr_words,"打开云端错误日志") != NULL)
+        else if(strstr(asr_result_str,"打开云端错误日志") != NULL)
         {
             ESP_LOGI(TAG, "set level 打开云端错误日志");
             start_log_upload(ESP_LOG_ERROR);
         }
-        else if(strstr((char *)g_bdsc_engine->current_asr_words,"关闭云端日志") != NULL)
+        else if(strstr(asr_result_str,"关闭云端日志") != NULL)
         {
             ESP_LOGI(TAG, "set level 关闭云端日志");
             start_log_upload(ESP_LOG_NONE);
@@ -327,7 +210,6 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
          * TIPS: 随 NLP 一起下发的TTS语音流，由SDK自动播放，暂时不对用户开放。
          */
 
-        
         cJSON *j_content = NULL;
         /* 某些情况下，需要跳过当前会话 */
         if (need_skip_current_playing()) {
@@ -338,14 +220,6 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
             ESP_LOGE(TAG, "json format error");
             return BDSC_CUSTOM_DESIRE_SKIP_DEFAULT;
         }
-#if CONFIG_CUPID_BOARD_V2
-        if (_check_dumplex_mode_st(j_content) == false && g_bdsc_engine->in_duplex_mode) {
-            /* 在duplex_mode中，过滤掉所有“非电视控制技能”的tts语音，以及url(如果有的话) */
-            bdsc_engine_skip_current_session_playing_once_flag_set(evt->client);
-            BdsJsonPut(j_content);
-            return BDSC_CUSTOM_DESIRE_SKIP_DEFAULT;
-        }
-#endif
 
         app_voice_control_feed_data(j_content, NULL);
 
@@ -364,7 +238,6 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
          *
          * 关于 用户数据推送 的使用，请参考相关文档。
          */
-        cupid_device_manager_feed_data(&g_dm, evt->data, evt->data_len, NULL);
         return BDSC_CUSTOM_DESIRE_DEFAULT;
     default:
         return BDSC_CUSTOM_DESIRE_DEFAULT;
@@ -373,24 +246,6 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
     return BDSC_CUSTOM_DESIRE_DEFAULT;
 }
 
-static void duplex_timer_cb(TimerHandle_t xTimer)
-{
-    char *resp_str = NULL;
-    ESP_LOGW(TAG, "DUPLEX timeout expired! STOP timer");
-    if (xTimerStop(g_bdsc_engine->duplex_timer, 10 / portTICK_PERIOD_MS) != pdPASS) {
-        ESP_LOGE(TAG, "Can not delete duplex timer, must do something!");
-    }
-    g_bdsc_engine->in_duplex_mode = 0;
-
-    if ((resp_str = create_duplex_mode_status_string(0))) {
-        bdsc_engine_channel_data_upload((uint8_t *)resp_str, strlen(resp_str) + 1);
-        free(resp_str);
-        display_service_set_pattern(g_disp_serv, DISPLAY_PATTERN_MUTE_OFF, 0);
-    }
-    bdsc_engine_skip_current_session_playing_once_flag_set(g_bdsc_engine);
-}
-
-extern int app_music_init(void);
 void app_main(void)
 {
     esp_err_t ret  = nvs_flash_init();
@@ -402,7 +257,7 @@ void app_main(void)
     tcpip_adapter_init();
 
     bdsc_partitions_init();
-    app_init();
+    app_system_setup();
 
     bdsc_engine_handle_t client;
     bdsc_engine_config_t cfg = {
@@ -416,27 +271,12 @@ void app_main(void)
         .event_handler = my_bdsc_engine_event_handler,
     };
     client = bdsc_engine_init(&cfg);
-#if CONFIG_CUPID_BOARD_V2
-    cupid_device_manager_init(&g_dm);
-#endif
-    // duplex mode init
-    client->duplex_timer = xTimerCreate("DUPLEX_TIMER", (60000 / portTICK_PERIOD_MS),
-                    pdFALSE, NULL, duplex_timer_cb);
-
-    client->duplex_mode_function_enable = false;
-
-    // load asr block words when statup
-    char block_word[256];
-    int buf_len = 256;
-    if (custom_key_op_safe(CUSTOM_KEY_GET, CUSTOM_KEY_TYPE_STRING, NVS_DEVICE_CUSTOM_NAMESPACE, "asr_block_word", block_word, &buf_len)) {
-        ESP_LOGE(TAG, "load asr_block_words fail");
-    } else {
-        client->asr_block_words = audio_strdup(block_word);
-    }
 
 #ifdef CONFIG_ENABLE_MUSIC_UNIT
     app_music_init();
 #endif
     start_sys_monitor();
-    //esp_log_level_set("*", ESP_LOG_NONE);   // Default print off
+#if CONFIG_CUPID_BOARD_V2
+    esp_log_level_set("*", ESP_LOG_NONE);   // Default print off
+#endif
 }
