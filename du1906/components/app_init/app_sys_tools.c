@@ -32,7 +32,7 @@
 
 static const char *TAG = "APP_SYS_TOOLS";
 
-#define SYS_PRINT_TASK_STATUS_INTERVAL   (5 * 60 * 1000)
+#define SYS_PRINT_TASK_STATUS_INTERVAL   (5 * 1000)
 
 extern esp_err_t esp_print_real_time_stats(TickType_t xTicksToWait);
 void sys_monitor_task(void *para)

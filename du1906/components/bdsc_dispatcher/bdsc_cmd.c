@@ -79,10 +79,6 @@ void bdsc_stop_asr()
 static int s_wp_num = WP_NUM_DEFAULT;
 void bdsc_start_wakeup()
 {
-    if (g_bdsc_engine->dsp_detect_error) {
-        ESP_LOGE("BDSC_CMD", "dsp load failed, skip wakeup functionality");
-        return;
-    }
     bdsc_wp_params_t params = {
         .wakeup_num =  s_wp_num
     };

@@ -227,4 +227,3 @@ int get_trannum_up()
     ts = cts;
     return ts;
 }
-

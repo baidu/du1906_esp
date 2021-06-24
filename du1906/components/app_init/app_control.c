@@ -158,7 +158,7 @@ void check_smartconfig_on_boot()
     }
 }
 
-void app_init(void)
+void app_system_setup(void)
 {
     // Clear the debug message
     esp_log_level_set("*", ESP_LOG_INFO);

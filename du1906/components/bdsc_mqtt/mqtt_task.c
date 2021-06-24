@@ -71,7 +71,6 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
     char online_msg[64];
     esp_mqtt_client_handle_t client = event->client;
     int msg_id;
-    static bool pub_once_flag = true;
     switch (event->event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
@@ -102,16 +101,6 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
             break;
         case MQTT_EVENT_PUBLISHED:
             ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
-            if (pub_once_flag) {
-                vTaskDelay(1000 / portTICK_PERIOD_MS);
-                char *device_status_info = generate_iot_device_status_info(-1, true);
-                if (device_status_info) {
-                    msg_id = esp_mqtt_client_publish(client, g_bdsc_engine->g_pub_topic, device_status_info, 0, 1, 0);
-                    ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
-                    free(device_status_info);
-                }
-                pub_once_flag = false;
-            }
             break;
         case MQTT_EVENT_DATA:
             ESP_LOGI(TAG, "MQTT_EVENT_DATA");

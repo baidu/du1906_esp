@@ -287,31 +287,6 @@ void stop_or_pause_async(int event)
     }
 }
 
-bool check_duplex_mode_and_exit(char *extern_json)
-{
-    cJSON *j_content = NULL;
-    char *action_type_str = NULL;
-
-    if (extern_json &&
-        (j_content = cJSON_Parse((const char *)extern_json)) &&
-        (action_type_str = BdsJsonObjectGetString(j_content, "action_type")) &&
-        (!strncmp(action_type_str, "asrnlp_url", strlen("asrnlp_url")) ||
-        !strncmp(action_type_str, "asrnlp_mix", strlen("asrnlp_mix")) ||
-        !strncmp(action_type_str, "asrnlp_ttsurl", strlen("asrnlp_ttsurl")))) {
-        
-        if (g_bdsc_engine->in_duplex_mode) {
-            ESP_LOGI(TAG, "we don't process this kind message In duplex mode");
-            BdsJsonPut(j_content);
-            return true;
-        }
-    }
-
-    if (j_content) {
-        BdsJsonPut(j_content);
-    }
-    return false;
-}
-
 int32_t handle_bdsc_event(engine_elem_t elem)
 {
     raw_data_t *raw = NULL;
@@ -479,10 +454,7 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                                      extern_result->buffer_length, extern_result->buffer + 12);
                             
                             g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_EXTERN_DATA;
-                            if (check_duplex_mode_and_exit((char*)extern_result->buffer + 12)) {
-                                bdsc_engine_skip_current_session_playing_once_flag_set(g_bdsc_engine); // skip tailing tts data
-                                break;
-                            }
+
                             char *json_buf = NULL;
                             json_buf = audio_calloc(1, extern_result->buffer_length + 1);
                             memcpy(json_buf, extern_result->buffer + 12, extern_result->buffer_length);
@@ -574,35 +546,10 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                     case ASR_TTS_ENGINE_GOT_EXTERN_DATA:
                         ESP_LOGI(TAG, "got asr end, no tts data");
                         g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_ASR_END;
-                        if (g_bdsc_engine->in_duplex_mode) {
-                            ESP_LOGI(TAG, "in duplex mode1");
-                            bdsc_start_asr(0);
-                            g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_STARTTED;
-                            break;
-                        }
                         break;
                     case ASR_TTS_ENGINE_GOT_TTS_DATA:
                         ESP_LOGI(TAG, "got asr end, has tts data");
                         g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_ASR_END;
-
-                        if (need_skip_current_playing()) {
-                            if (g_bdsc_engine->in_duplex_mode) {
-                                ESP_LOGI(TAG, "need_skip_current_playing in duplex mode2");
-                                bdsc_start_asr(0);
-                                g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_STARTTED;
-                            }
-                            break;
-                        }
-                        if (g_bdsc_engine->in_duplex_mode) {
-                            // FIXME: in duplex mode, waiting for 'haode' palying done
-                            vTaskDelay(600 / portTICK_PERIOD_MS);
-                        }
-                        if (g_bdsc_engine->in_duplex_mode) {
-                            //bdsc_stop_asr();
-                            // 纯识别，需要设置 backtine == 0
-                            bdsc_start_asr(0);
-                            g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_STARTTED;
-                        }
                         break;
                     case ASR_TTS_ENGINE_GOT_ASR_ERROR:
                     case ASR_TTS_ENGINE_GOT_ASR_END:
@@ -743,13 +690,7 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                 break;
             }
         case EVENT_RECV_MQTT_PUSH_URL: {
-                if (g_bdsc_engine->dsp_detect_error) {
-                    ESP_LOGI(TAG, "dsp detect error, dont play");
-                    break;
-                }
-                if (!g_bdsc_engine->in_duplex_mode) {
-                    bdsc_stop_asr();
-                }
+                bdsc_stop_asr();
                 g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_ASR_END;
                 char *mqtt_url = audio_strdup((const char*)elem.data);
                 send_music_queue(MQTT_URL, mqtt_url);

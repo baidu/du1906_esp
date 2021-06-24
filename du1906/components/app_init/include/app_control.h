@@ -44,7 +44,7 @@ extern "C" {
  * @brief Initializes du1906 application
  *
  */
-void app_init(void);
+void app_system_setup(void);
 
 #if CONFIG_CUPID_BOARD_V2
 extern EventGroupHandle_t g_long_press_power_on;
