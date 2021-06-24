@@ -479,9 +479,6 @@ Server: BWS
 X-Bce-Request-Id: 50cbd47c-6f13-44dc-a2cb-a83ceb4bbb2a
 
 I (6950) HTTP_TASK: 193 bytes read
-{"broker":"azsgqzj.iot.gz.baidubce.com","user":"thingidp@azsgqzj|cabcaad9358dd1623427701be534f578|0|MD5","pass":"d57ce60bed6a3243fc12c0cd7dc30906","clientID":"cabcaad9358dd1623427701be534f578"}I (6952) HTTP_TASK: connection closed
-I (6957) AUTH_TASK: recv body: {"broker":"azsgqzj.iot.gz.baidubce.com","user":"thingidp@azsgqzj|cabcaad9358dd1623427701be534f578|0|MD5","pass":"d57ce60bed6a3243fc12c0cd7dc30906","clientID":"cabcaad9358dd1623427701be534f578"}
-I (6958) BDSC_ENGINE: auth restul: broker: azsgqzj.iot.gz.baidubce.com, clientID: cabcaad9358dd1623427701be534f578, username: thingidp@azsgqzj|cabcaad9358dd1623427701be534f578|0|MD5, pwd: d57ce60bed6a3243fc12c0cd7dc30906
 
 I (7006) BDSC_ENGINE: profile save OK
 I (7007) gpio: GPIO[27]| InputEn: 0| OutputEn: 1| OpenDrain: 0| Pullup: 0| Pulldown: 0| Intr:0
