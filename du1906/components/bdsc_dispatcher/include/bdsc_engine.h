@@ -136,18 +136,10 @@ struct bdsc_engine {
     char                     g_sub_topic[256];
 
     int                     cur_vol;
-    int                     in_duplex_mode;
-    TimerHandle_t           duplex_timer;
-    bool                    duplex_mode_function_enable;
-
     char                    *asrnlp_ttsurl;
-    
     bool                    g_has_greeted;
-    char                    *current_asr_words;
-    char                    *asr_block_words;
     bool                    skip_tts_playing_once;
     bool                    in_ota_process_flag;
-    bool                    dsp_detect_error;
     char                    *sc_customer_data;
     uint32_t                ota_time_begin;
     xTaskHandle             ota_monitor_task_handle;

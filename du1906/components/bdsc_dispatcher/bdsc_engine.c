@@ -175,11 +175,7 @@ void start_sdk()
     int err = bds_client_start(g_bdsc_engine->g_client_handle);
     if (err) {
         ESP_LOGE(MAIN_TAG, "bds_client_start failed");
-        if (!g_bdsc_engine->dsp_detect_error) {
-            g_bdsc_engine->dsp_detect_error = true;
-            bdsc_play_hint(BDSC_HINT_DSP_LOAD_FAIL);
-            vTaskDelay(5000 / portTICK_PERIOD_MS); // make sure play done
-        }
+        bdsc_play_hint(BDSC_HINT_DSP_LOAD_FAIL);
     }
 }
 
