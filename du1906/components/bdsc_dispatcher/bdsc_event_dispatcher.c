@@ -57,7 +57,7 @@
 #define EVENT_ENGINE_QUEUE_LEN  256
 #define DEFAULT_WAKEUP_BACKTIME 200
 extern display_service_handle_t g_disp_serv;
-
+static TimerHandle_t reconnect_timer_hander = NULL;
 typedef struct _engine_elem_t {
     int     event;
     uint8_t *data;
@@ -67,7 +67,7 @@ typedef struct _engine_elem_t {
 typedef struct _tts_pkg_t {
     uint16_t  json_len;
     uint8_t   *json_data;
-    uint32_t  raw_len;
+    int32_t  raw_len;
     uint8_t   *raw_data;
 } tts_pkg_t;
 static short covert_to_short(char *buffer)
@@ -287,9 +287,41 @@ void stop_or_pause_async(int event)
     }
 }
 
+extern void config_sdk(bds_client_handle_t handle);
+void start_reconnect_callback(TimerHandle_t xTimer)
+{
+    ESP_LOGW(TAG, "call start_reconnect_callback");
+    config_sdk(g_bdsc_engine->g_client_handle);
+    bdsc_link_start();
+}
+/*
+    When the network is normal, the SDK will return the disconnect event with json status if a link to the server cannot be established
+*/
+static int long_link_disconnected_handle(char *data, uint16_t len)
+{
+    int status = 0;
+    cJSON *json = BdsJsonParse(data);
+    if (!json) {
+        ERR_OUT(err_json_format, "buff isn't json data");
+    }
+    if(BdsJsonObjectGetInt(json, "status", &status)) {
+        ERR_OUT(err_item, "no status item");
+    }
+    if(status) {    //We only handle status ==1 case, means wrong config.
+        bdsc_link_stop();
+        xTimerStart(reconnect_timer_hander,0);
+    }
+    BdsJsonPut(json);
+    return 0;
+
+err_item:
+    BdsJsonPut(json);
+err_json_format:
+    return -1;
+}
+
 int32_t handle_bdsc_event(engine_elem_t elem)
 {
-    raw_data_t *raw = NULL;
     bdsc_custom_desire_action_t desire = BDSC_CUSTOM_DESIRE_DEFAULT;
     
     switch (elem.event) {
@@ -638,12 +670,19 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                 break;
             }
         case EVENT_LINK_DISCONNECTED: {
-                bdsc_event_data_t *push_data = (bdsc_event_data_t*)elem.data;
-                if (push_data) {
-                    ESP_LOGW(TAG, "---> ---> EVENT_LINK_DISCONNECTED buffer_length=%d, buffer=",
-                            push_data->buffer_length);
+                bdsc_event_data_t *data = (bdsc_event_data_t*)elem.data;
+                if (data) {
+                    ESP_LOGW(TAG, "---> ---> EVENT_LINK_DISCONNECTED buffer_length=%d, buffer= %s",
+                            data->buffer_length, data->buffer);
+                    /*
+                    If the link disconnected caused by bad network, SDK will automatically reconnect. 
+                    In this case, data->buffer is not a json string and we dont handle this. But if 
+                    it is caused by wrong config or something else, it's better to modify config and 
+                    restart link manually. In this case, data->buffer is a json string, We statup a timet to handle this issue.
+                    */
+                    long_link_disconnected_handle((char*)data->buffer, data->buffer_length);
                 } else {
-                    ESP_LOGE(TAG, "---> EVENT_LINK_CONNECTED data null");
+                    ESP_LOGE(TAG, "---> EVENT_LINK_DISCONNECTED data null");
                 }
                 break;
             }
@@ -651,6 +690,10 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                 bdsc_event_error_t *error = (bdsc_event_error_t *)elem.data;
                 if (error) {
                     ESP_LOGW(TAG, "---> EVENT_LINK_ERROR code=%"PRId32"--info=", error->code);
+                    if(g_bdsc_engine->cur_in_asr_session && error->code == -6002) { 
+                        bdsc_play_hint(BDSC_HINT_DISCONNECTED); //-6002 an error occurred while connecting to the server
+                        g_bdsc_engine->cur_in_asr_session = false;
+                    }
                 } else {
                     ESP_LOGE(TAG, "---> EVENT_LINK_ERROR error null");
                 }
@@ -800,7 +843,6 @@ static void engine_task(void *pvParameters)
                 free(elem.data);
                 continue;
             }
-            ESP_LOGI(TAG, "event loop ==>");
             if (g_bdsc_engine->in_wakeup) {
                 EventBits_t bits = xEventGroupWaitBits(g_bdsc_engine->wk_group, WK_FINISH, true, false, portMAX_DELAY);
                 if (bits & WK_FINISH) {
@@ -808,10 +850,10 @@ static void engine_task(void *pvParameters)
                 }
             }
 
-            ESP_LOGW("EVENT_IN", "Handle sdk event start.");
+            ESP_LOGD("EVENT_IN", "Handle sdk event start.");
             handle_bdsc_event(elem);
             free(elem.data);
-            ESP_LOGW("EVENT_OUT", "Handle sdk event end.");
+            ESP_LOGD("EVENT_OUT", "Handle sdk event end.");
         }
         //ESP_LOGI(TAG, "Stack: %d", uxTaskGetStackHighWaterMark(NULL));
     }
@@ -842,6 +884,12 @@ int bdsc_asr_tts_engine_init()
 
     g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_ASR_END;
 
+    /* timer to reconnect */
+    reconnect_timer_hander = xTimerCreate("reconnect timer", (10 * 1000 / portTICK_PERIOD_MS),\
+                                           pdFALSE, (void *)0, start_reconnect_callback);
+    if (!reconnect_timer_hander) {
+        ESP_LOGE(TAG, "Couldn't create reconnect_timer_hander");
+    }
     return 0;
 }
 

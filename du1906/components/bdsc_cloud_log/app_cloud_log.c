@@ -46,6 +46,20 @@ void set_cloud_log_level(esp_log_level_t level)
     }
 }
 
+void start_log_upload(esp_log_level_t level)
+{
+    if (!app_cloud_log_task_check_inited()) {
+        cloud_log_cfg_t log_cfg = {
+            .type  = LOG_CHANNEL_TYPE_HTTPS,
+            .level = CLOUD_LOG_WARN,
+        };
+        app_cloud_log_task_init(&log_cfg);
+        cloud_print_on();
+        vTaskDelay(1000);
+    }
+    set_cloud_log_level(level);
+}
+
 void cloud_log_vprintf(esp_log_level_t level,const char *fmt, va_list ap)
 {
     // NOTICE: dont use ESP_LOGx in this function, or it will cause stack overflow
