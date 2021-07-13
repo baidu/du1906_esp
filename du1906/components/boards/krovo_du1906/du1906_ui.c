@@ -22,7 +22,9 @@
 #include "tas5805m.h"
 #include "app_music.h"
 #include "app_bt_init.h"
-
+#ifdef CONFIG_CLOUD_LOG
+#include "app_cloud_log.h"
+#endif
 #define  TAG  "KROVO_DU1906_UI"
 
 extern bool g_print_task_status;
@@ -177,6 +179,62 @@ esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_service_ev
             break;
     }
     return ESP_OK;
+}
+
+/*
+* user can use it to process mqtt message
+*/
+int process_mqtt_control_data(uint8_t *data, size_t data_len)
+{
+/*"{\"trannum\":xxx,\"type\":\"urlplay\",\"body\":{\"url\":\"xxxxxx\"}}"*/
+/*"{\"trannum\":xxx,\"type\":\"cloud_log\",\"body\":{\"level\":xxx}}"*/
+    int transNum = -1;
+    char *type = NULL;
+    BdsJson* body = NULL;
+    BdsJson* json = NULL;
+
+    if (!(json = BdsJsonParse((const char *)data))) {
+        ERR_OUT(err_json, "mqtt push json format error");
+    }
+    type = BdsJsonObjectGetString(json, "type");
+    if(!type) {
+        ERR_OUT(err_type, "not find type");
+    }
+    body = BdsJsonObjectGet(json, "body");
+    if(!strcmp(type, "urlplay") && body){
+        char *url = BdsJsonObjectGetString(body, "url");
+        if(url) {
+            event_engine_elem_EnQueque(EVENT_RECV_MQTT_PUSH_URL, (uint8_t *)url, strlen(url) + 1);
+        }
+#ifdef CONFIG_CLOUD_LOG
+    } else if(!strcmp(type, "cloud_log") && body) {
+        int32_t cloud_log_level = 0;
+        if(!BdsJsonObjectGetInt(body, "level", &cloud_log_level)) {
+            switch (cloud_log_level) {
+            case ESP_LOG_DEBUG:
+            case ESP_LOG_INFO:
+            case ESP_LOG_WARN:
+            case ESP_LOG_ERROR:
+            case ESP_LOG_NONE:
+
+                start_log_upload(cloud_log_level);
+                ESP_LOGI(TAG, "set level %d", cloud_log_level);
+
+                break;
+            default:
+                ESP_LOGE(TAG, "unkonw para:%d", cloud_log_level);
+                break;
+            }
+        }
+#endif
+    }
+    cJSON_Delete(json);
+    return 0;
+
+err_type:
+    cJSON_Delete(json);
+err_json:
+    return -1;
 }
 
 esp_err_t audio_board_pa_enter_deep_sleep(void)

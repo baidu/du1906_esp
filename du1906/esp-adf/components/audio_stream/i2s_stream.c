@@ -186,7 +186,6 @@ static esp_err_t _i2s_destroy(audio_element_handle_t self)
     return ESP_OK;
 }
 
-esp_err_t audio_board_pa_enter_deep_sleep(void);
 static esp_err_t _i2s_close(audio_element_handle_t self)
 {
     i2s_stream_t *i2s = (i2s_stream_t *)audio_element_getdata(self);
@@ -204,7 +203,6 @@ static esp_err_t _i2s_close(audio_element_handle_t self)
             alc_volume_setup_close(i2s->volume_handle);
         }
     }
-    audio_board_pa_enter_deep_sleep();
     return ESP_OK;
 }
 

@@ -86,5 +86,5 @@ extern int g_cloud_log_ring_buf_sz;
 esp_err_t uart_print_on();
 esp_err_t uart_print_off();
 esp_err_t cloud_print_on();
-
+void start_log_upload(esp_log_level_t level);
 #endif

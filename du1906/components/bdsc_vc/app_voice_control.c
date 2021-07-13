@@ -327,6 +327,7 @@ void unit_cmd_handle(unit_data_t *pdata, uint32_t code)
         break;
     case IAQ_QUERY:
         ESP_LOGW(TAG, "IAQ_QUERY");
+        g_bdsc_engine->need_skip_current_pending_http_part = true;
         send_music_queue(SPEECH_MUSIC, pdata);
         break;
     default:

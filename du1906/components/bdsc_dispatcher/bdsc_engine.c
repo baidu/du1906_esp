@@ -58,7 +58,8 @@ static int32_t bdsc_event_callback(bds_client_event_t *event, void *custom)
         switch (event->key) {
         case EVENT_ASR_ERROR:
         {
-            event_engine_elem_EnQueque(EVENT_ASR_ERROR, event->content, sizeof(bdsc_event_error_t));
+            bdsc_event_error_t *error = (bdsc_event_error_t*)event->content;
+            event_engine_elem_EnQueque(EVENT_ASR_ERROR, error, sizeof(bdsc_event_error_t) + error->info_length);
             break;
         }
         case EVENT_ASR_CANCEL:
@@ -103,7 +104,9 @@ static int32_t bdsc_event_callback(bds_client_event_t *event, void *custom)
         case EVENT_WAKEUP_OFFLINE_DIRECTIVE:
         {
             display_service_set_pattern(g_disp_serv, DISPLAY_PATTERN_WAKEUP_ON, 0);
-            event_engine_elem_EnQueque(EVENT_WAKEUP_OFFLINE_DIRECTIVE, event->content, sizeof(bdsc_event_wakeup_t));
+            bdsc_event_data_t *offline_data = (bdsc_event_data_t*)event->content;
+            event_engine_elem_EnQueque(EVENT_WAKEUP_OFFLINE_DIRECTIVE, offline_data, sizeof(bdsc_event_wakeup_t)\
+                                       + offline_data->buffer_length);
             break;
         }
         case EVENT_WAKEUP_ERROR:
@@ -113,28 +116,35 @@ static int32_t bdsc_event_callback(bds_client_event_t *event, void *custom)
         }
         case EVENT_LINK_CONNECTED:
         {
-            event_engine_elem_EnQueque(EVENT_LINK_CONNECTED, event->content, sizeof(bdsc_event_data_t));
+            bdsc_event_data_t *connect_data = (bdsc_event_data_t*)event->content;
+            event_engine_elem_EnQueque(EVENT_LINK_CONNECTED, connect_data, sizeof(bdsc_event_data_t)\
+                                      + connect_data->buffer_length);
             break;
         }
         case EVENT_LINK_DISCONNECTED:
         {
-            event_engine_elem_EnQueque(EVENT_LINK_DISCONNECTED, event->content, sizeof(bdsc_event_data_t));
+            bdsc_event_data_t *dis_data = (bdsc_event_data_t*)event->content;
+            event_engine_elem_EnQueque(EVENT_LINK_DISCONNECTED, dis_data, sizeof(bdsc_event_data_t)\
+                                       + dis_data->buffer_length);
             break;
         }
         case EVENT_LINK_ERROR:
         {
-            event_engine_elem_EnQueque(EVENT_LINK_ERROR, event->content, sizeof(bdsc_event_error_t));
+            bdsc_event_error_t *error = (bdsc_event_error_t*)event->content;
+            event_engine_elem_EnQueque(EVENT_LINK_ERROR, error, sizeof(bdsc_event_error_t) + error->info_length);
             break;
         }
         case EVENT_RECORDER_DATA:
         {
             bdsc_event_data_t *pcm_data = (bdsc_event_data_t*)event->content;
-            event_engine_elem_EnQueque(EVENT_RECORDER_DATA, event->content, sizeof(bdsc_event_data_t) + pcm_data->buffer_length);
+            event_engine_elem_EnQueque(EVENT_RECORDER_DATA, pcm_data, sizeof(bdsc_event_data_t)\
+                                      + pcm_data->buffer_length);
             break;
         }
         case EVENT_RECORDER_ERROR:
         {
-            event_engine_elem_EnQueque(EVENT_RECORDER_ERROR, event->content, sizeof(bdsc_event_error_t));
+            bdsc_event_error_t *error = (bdsc_event_error_t*)event->content;
+            event_engine_elem_EnQueque(EVENT_RECORDER_ERROR, error, sizeof(bdsc_event_error_t) + error->info_length);
             break;
         }
         case EVENT_SDK_START_COMPLETED:
@@ -144,7 +154,8 @@ static int32_t bdsc_event_callback(bds_client_event_t *event, void *custom)
         }
         case EVENT_DSP_FATAL_ERROR:
         {
-            event_engine_elem_EnQueque(EVENT_DSP_FATAL_ERROR, event->content, sizeof(bdsc_event_error_t));
+            bdsc_event_error_t *error = (bdsc_event_error_t*)event->content;
+            event_engine_elem_EnQueque(EVENT_DSP_FATAL_ERROR, error, sizeof(bdsc_event_error_t) + error->info_length);
             break;
         }
         default:
@@ -182,6 +193,7 @@ void start_sdk()
 void config_sdk(bds_client_handle_t handle)
 {
     esp_partition_t *partition = NULL;
+
     ESP_LOGI(MAIN_TAG, "bootbale dsp lable: %s", bdsc_partitions_get_bootable_dsp_label());
     partition = (esp_partition_t *)esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
             ESP_PARTITION_SUBTYPE_ANY, bdsc_partitions_get_bootable_dsp_label());
@@ -189,7 +201,7 @@ void config_sdk(bds_client_handle_t handle)
         ESP_LOGE(MAIN_TAG, "Can not find dsp partition");
         return;
     }
-    char sn[37];
+    char sn[BDSC_MAX_UUID_LEN];
     generate_uuid(sn);
     char *pam_data = "";//iot don't authentication when connect server
     bdsc_engine_params_t *engine_params = bdsc_engine_params_create_wrapper(sn, "du1906_app", strlen(pam_data) + 1, pam_data);

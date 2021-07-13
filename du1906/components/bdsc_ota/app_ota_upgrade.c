@@ -310,6 +310,21 @@ static custom_ota_bin_desc_t *fetch_custom_header_once(char * ota_url)
     if (!desc_j) {
         ERR_OUT(err_out, "cJSON_ParseWithOpts error");
     }
+    // compatilbe fc pk check
+    cJSON *fcJ = cJSON_GetObjectItem(desc_j, "compat_fc");
+    cJSON *pkJ = cJSON_GetObjectItem(desc_j, "compat_pk");
+    if (!fcJ || !pkJ) {
+        ERR_OUT(err_out, "compatilbe fc pk not found in ota bin, quit!!");
+    }
+    if (fcJ->valuestring && !strncmp(fcJ->valuestring, g_bdsc_engine->g_vendor_info->fc, \
+        strlen(g_bdsc_engine->g_vendor_info->fc)) &&
+        pkJ->valuestring && !strncmp(pkJ->valuestring, g_bdsc_engine->g_vendor_info->pk, \
+        strlen(g_bdsc_engine->g_vendor_info->pk))) {
+        
+        ESP_LOGI(TAG, "compatilbe fc pk match, continue ...");
+    } else {
+        ERR_OUT(err_out, "compatilbe fc pk not match, quit!!");
+    }
     bin_desc = (custom_ota_bin_desc_t*)audio_calloc(1, sizeof(custom_ota_bin_desc_t));
     if (!bin_desc) {
         ERR_OUT(err_out, "malloc error");

@@ -44,7 +44,7 @@
 const char *TAG = "BDSC_CMD";
 void bdsc_start_asr(int back_time)
 {
-    char sn[37] = {0};
+    char sn[BDSC_MAX_UUID_LEN] = {0};
     bds_generate_uuid(sn);
     char *pam_data = audio_calloc(1, 4096);
     if(pam_data == NULL) {

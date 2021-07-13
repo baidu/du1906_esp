@@ -950,7 +950,7 @@ audio_element_handle_t audio_element_init(audio_element_cfg_t *config)
     evt_cfg.context = el;
     evt_cfg.queue_set_size = 0; // Element have no queue_set by default.
     evt_cfg.external_queue_size = 5;
-    evt_cfg.internal_queue_size = 5;
+    evt_cfg.internal_queue_size = 8;
     bool _success =
         (
             ((config->tag ? audio_element_set_tag(el, config->tag) : audio_element_set_tag(el, "unknown")) == ESP_OK) &&
@@ -1159,6 +1159,7 @@ esp_err_t audio_element_terminate_with_ticks(audio_element_handle_t el, TickType
         ESP_LOGW(TAG, "[%s] Element has not create when AUDIO_ELEMENT_TERMINATE, tick:%d", el->tag, ticks_to_wait);
         return ESP_OK;
     }
+    el->del_flag = true;
     if (el->task_stack <= 0) {
         el->task_run = false;
         el->is_running = false;

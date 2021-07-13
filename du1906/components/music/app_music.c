@@ -89,7 +89,7 @@ int next_song_user_cb(void *ctx)
     }
     if (next_song_timer_handle != NULL) {
         if(current_music->duration > SILENT_NEXT_TIME_EARLY) {
-            xTimerChangePeriod(next_song_timer_handle, (current_music->duration - SILENT_NEXT_TIME_EARLY) / portTICK_PERIOD_MS, 0);
+            xTimerChangePeriod(next_song_timer_handle, 1 + (current_music->duration - SILENT_NEXT_TIME_EARLY) / portTICK_PERIOD_MS, 0);
         } else {
             xTimerChangePeriod(next_song_timer_handle, 1 + current_music->duration / portTICK_PERIOD_MS, 0);
         }
@@ -162,7 +162,7 @@ static void app_music_task(void *pvParameters)
         if (g_music_queue_handle && xQueueReceive(g_music_queue_handle, &pQueue_data, portMAX_DELAY) == pdPASS) {
             switch (pQueue_data.type) {
             case URL_MUSIC:
-                ESP_LOGE(TAG, "===================> recv ID/URL music");
+                ESP_LOGD(TAG, "===================> recv ID/URL music");
                 if (pQueue_data.action == CACHE_MUSIC) {       // 缓存下一首
                     pls_cache_music(g_pls_handle, pQueue_data);
                     continue;
@@ -173,7 +173,7 @@ static void app_music_task(void *pvParameters)
                 }
                 break;
             case ALL_TYPE:
-                ESP_LOGE(TAG, "===================> recv ALL_TYPE");
+                ESP_LOGD(TAG, "===================> recv ALL_TYPE");
                 /*
                  * ALL_TYPE 有两种 action:
                  * 1.  NEXT_MUSIC: 表示 播放结束了的
@@ -185,14 +185,14 @@ static void app_music_task(void *pvParameters)
                 }
                 break;
             case SPEECH_MUSIC:
-                ESP_LOGE(TAG, "===================> recv SPEECH_MUSIC");
+                ESP_LOGD(TAG, "===================> recv SPEECH_MUSIC");
                 pls_add_music_to_head(g_pls_handle, pQueue_data);
                 break;
             case RAW_TTS_DATA:
-                ESP_LOGE(TAG, "===================> recv RAW_TTS_DATA");
+                ESP_LOGD(TAG, "===================> recv RAW_TTS_DATA");
                 break;
             case TONE_MUSIC:
-                ESP_LOGE(TAG, "===================> recv TONE_MUSIC");
+                ESP_LOGD(TAG, "===================> recv TONE_MUSIC");
                 /* some randonly poped out music, such as bt_connected.
                  * should pause previous http play if necessary
                  */
@@ -200,29 +200,29 @@ static void app_music_task(void *pvParameters)
                 pls_add_music_to_head(g_pls_handle, pQueue_data);
                 break;
             case MQTT_URL:
-                ESP_LOGE(TAG, "===================> recv MQTT_URL");
+                ESP_LOGD(TAG, "===================> recv MQTT_URL");
                 pls_clean_list(g_pls_handle);
                 pls_add_music_to_head(g_pls_handle, pQueue_data);
                 break;
             case A2DP_PLAY:
-                ESP_LOGE(TAG, "===================> recv A2DP_PLAY");
+                ESP_LOGD(TAG, "===================> recv A2DP_PLAY");
                 pls_clean_list(g_pls_handle);
                 pls_add_music_to_head(g_pls_handle, pQueue_data);
                 break;
             case ACTIVE_TTS:
-                ESP_LOGE(TAG, "===================> recv ACTIVE_TTS");
+                ESP_LOGD(TAG, "===================> recv ACTIVE_TTS");
                 pls_add_music_to_head(g_pls_handle, pQueue_data);
                 break;
             case MUSIC_CTL_CONTINUE:
-                ESP_LOGE(TAG, "===================> recv MUSIC_CTL_CONTINUE");
+                ESP_LOGD(TAG, "===================> recv MUSIC_CTL_CONTINUE");
                 pls_add_music_to_head(g_pls_handle, pQueue_data);
                 break;
             case MUSIC_CTL_PAUSE:
-                ESP_LOGE(TAG, "===================> recv MUSIC_CTL_PAUSE");
+                ESP_LOGD(TAG, "===================> recv MUSIC_CTL_PAUSE");
                 pls_add_music_to_head(g_pls_handle, pQueue_data);
                 break;
             case MUSIC_CTL_STOP:
-                ESP_LOGE(TAG, "===================> recv MUSIC_CTL_STOP");
+                ESP_LOGD(TAG, "===================> recv MUSIC_CTL_STOP");
                 pls_add_music_to_head(g_pls_handle, pQueue_data);
                 break;
             default:
