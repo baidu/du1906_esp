@@ -14,7 +14,7 @@ extern "C" {
 typedef void *esp_audio_handle_t;
 
 #define DEFAULT_ESP_AUDIO_CONFIG() {\
-    .in_stream_buf_size = 10*1024,\
+    .in_stream_buf_size = 100*1024,\
     .out_stream_buf_size = 4*1024,\
     .resample_rate = 0,\
     .evt_que = NULL,\

@@ -116,6 +116,9 @@ typedef struct {
 
 typedef struct {
     int wakeup_num;
+#ifdef CONFIG_USE_OFFLINE_DIRECTIVE
+    int offline_directive_duration; // ms
+#endif
 } bdsc_wp_params_t;
 
 typedef struct __attribute__((packed)) Detect_Thld {

@@ -89,7 +89,7 @@ typedef struct {
 
 
 #define HTTP_STREAM_TASK_STACK          (6 * 1024)
-#define HTTP_STREAM_TASK_CORE           (0)
+#define HTTP_STREAM_TASK_CORE           (1)
 #define HTTP_STREAM_TASK_PRIO           (4)
 #define HTTP_STREAM_RINGBUFFER_SIZE     (20 * 1024)
 

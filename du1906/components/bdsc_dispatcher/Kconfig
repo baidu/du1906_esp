@@ -1,0 +1,6 @@
+menu "bdsc engine"
+
+config USE_OFFLINE_DIRECTIVE
+    bool "enable offline directive"
+
+endmenu

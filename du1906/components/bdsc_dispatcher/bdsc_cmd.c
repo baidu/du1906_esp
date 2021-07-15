@@ -80,7 +80,10 @@ static int s_wp_num = WP_NUM_DEFAULT;
 void bdsc_start_wakeup()
 {
     bdsc_wp_params_t params = {
-        .wakeup_num =  s_wp_num
+        .wakeup_num =  s_wp_num,
+#ifdef CONFIG_USE_OFFLINE_DIRECTIVE
+        .offline_directive_duration = 3000 //the valid interval of wakeup, unit ms
+#endif
     };
     if (s_wp_num >= WP_NUM_TWO) {
         s_wp_num = WP_NUM_DEFAULT;
