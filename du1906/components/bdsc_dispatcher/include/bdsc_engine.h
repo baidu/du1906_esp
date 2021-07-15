@@ -256,7 +256,6 @@ void bdsc_engine_start_tts(const char *tts_text);
 void start_sdk();
 void stop_sdk();
 
-
 #define ACTIVE_TTS_PREFIX   "http://activetts/"
 
 #ifdef __cplusplus

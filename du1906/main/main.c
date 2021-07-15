@@ -43,30 +43,21 @@ bool need_skip_current_playing()
     return false;
 }
 
-#ifdef CONFIG_CLOUD_LOG
-esp_err_t cloud_print_on();
-static void start_log_upload(int level)
+/*
+*user can add yourself process_mqtt_control_data to process mqtt message
+*you can add process_mqtt_control_data refer to it in du1906_ui.c
+*/
+int __attribute__((weak)) process_mqtt_control_data(uint8_t *data, size_t data_len)
 {
-    if (!app_cloud_log_task_check_inited()) {
-        cloud_log_cfg_t log_cfg = {
-            .type  = LOG_CHANNEL_TYPE_HTTPS,
-            .level = CLOUD_LOG_WARN,
-        };
-        app_cloud_log_task_init(&log_cfg);
-        
-        cloud_print_on();
-        vTaskDelay(1000);
-    }
-    set_cloud_log_level(level);
+    return 0;
 }
-#endif
 
 esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
 {
-    cJSON *json = NULL;
-    char *resp_str = NULL;
     char *asr_result_str = NULL;
-    
+    cJSON *json = NULL;
+    int err_value = 0;
+
     switch (evt->event_id) {
     case BDSC_EVENT_ERROR:
         ESP_LOGI(TAG, "==> Got BDSC_EVENT_ERROR");
@@ -95,12 +86,6 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
                 if (error->code == -2002) {
                     bdsc_play_hint(BDSC_HINT_DISCONNECTED);
                 }
-                else {
-                    bdsc_play_hint(BDSC_HINT_NOT_FIND);
-                }
-            }
-            else {
-                bdsc_play_hint(BDSC_HINT_NOT_FIND);
             }
             return BDSC_CUSTOM_DESIRE_SKIP_DEFAULT;
         }
@@ -145,6 +130,22 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
             return BDSC_CUSTOM_DESIRE_DEFAULT;
         }
         ESP_LOGI(TAG, "========= asr result %s", asr_result_str);
+
+        if (!(json = BdsJsonParse((const char *)asr_result_str))) {
+            ESP_LOGE(TAG, "json format error");
+            return BDSC_CUSTOM_DESIRE_SKIP_DEFAULT;
+        }
+        if (-1 == BdsJsonObjectGetInt(json, "err_no", &err_value)) {
+            ESP_LOGE(TAG, "json format error");
+            BdsJsonPut(json);
+            return BDSC_CUSTOM_DESIRE_SKIP_DEFAULT;
+        }
+        if (err_value == -3005) { //asr not find effective speech
+            bdsc_play_hint(BDSC_HINT_NOT_FIND);
+            BdsJsonPut(json);
+            return BDSC_CUSTOM_DESIRE_DEFAULT;
+        }
+        BdsJsonPut(json);
 
 #ifdef CONFIG_CLOUD_LOG
         if(strstr(asr_result_str,"打开云端调试日志") != NULL)
@@ -238,6 +239,7 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
          *
          * 关于 用户数据推送 的使用，请参考相关文档。
          */
+        process_mqtt_control_data(evt->data, evt->data_len);
         return BDSC_CUSTOM_DESIRE_DEFAULT;
     default:
         return BDSC_CUSTOM_DESIRE_DEFAULT;
