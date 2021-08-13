@@ -52,11 +52,9 @@ void pls_dump(pls_handle_t *handle)
     music_t *tmp = handle->pls_head;
     ESP_LOGD(TAG, "==> pls_dump");
     while (tmp) {
-        printf("%d %d %d\n", tmp->type, tmp->action_type, tmp->play_state);
         cnt++;
         tmp = tmp->next;
     }
-    printf("\n");
 }
 
 void delete_music(music_t *node)

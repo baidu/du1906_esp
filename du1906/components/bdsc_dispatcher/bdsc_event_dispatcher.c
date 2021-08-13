@@ -480,10 +480,11 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                             /*
                             * buffer 格式：
                             *      | json string len (4B) | type (8B, "iot") | json stirng ....|
+                            * buffer is not end ascii
                             */
-                            ESP_LOGW(TAG, "---> EVENT_ASR_EXTERN_DATA sn=%s, idx=%d, buffer_length=%d, buffer=%s",
-                                     extern_result->sn, extern_result->idx,
-                                     extern_result->buffer_length, extern_result->buffer + 12);
+                            ESP_LOGW(TAG, "---> EVENT_ASR_EXTERN_DATA sn=%s, idx=%d, buffer_length=%d, buffer=%.*s",
+                                     extern_result->sn, extern_result->idx, extern_result->buffer_length,
+                                     extern_result->buffer_length - 12, extern_result->buffer + 12);
                             
                             g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_EXTERN_DATA;
 
