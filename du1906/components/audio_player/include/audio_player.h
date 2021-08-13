@@ -388,6 +388,7 @@ audio_err_t audio_player_mode_get(audio_player_mode_t *mode);
  */
 audio_err_t audio_player_clear_audio_info(void);
 
+void audio_player_waiting_idle_st(uint32_t timeout_ms);
 #ifdef __cplusplus
 }
 #endif

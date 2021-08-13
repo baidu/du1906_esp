@@ -226,6 +226,7 @@ static void bdsc_sdk_init()
     bds_client_set_event_listener(g_bdsc_engine->g_client_handle, bdsc_event_callback, NULL);
     bds_set_log_level(g_bdsc_engine->cfg->log_level);
     start_sdk();
+    audio_player_waiting_idle_st(10*1000);   //avoiding handshark interrupt boot music
     bdsc_link_start();
     bdsc_start_wakeup();
 

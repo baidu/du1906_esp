@@ -288,3 +288,18 @@ audio_err_t audio_player_clear_audio_info(void)
 {
     return ap_manager_clear_audio_info();
 }
+
+void audio_player_waiting_idle_st(uint32_t timeout_ms)
+{
+    size_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+    uint32_t start = xTaskGetTickCount();
+    audio_player_state_t st = {0};
+    audio_player_state_get(&st);
+    while ((st.status == AUDIO_PLAYER_STATUS_RUNNING) &&
+        (xTaskGetTickCount() - start) <= timeout_ticks) {
+
+        ESP_LOGI(TAG, "PLAY RUNNING, DELAY!!!");
+        vTaskDelay(500);
+        audio_player_state_get(&st);
+    }
+}
