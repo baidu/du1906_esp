@@ -114,6 +114,17 @@ void play_tone_by_id(bdsc_hint_type_t id)
     }
 }
 
+static void raw_data_free(raw_data_t* data)
+{
+    raw_data_t *raw = data;
+    if (raw) {
+        if (raw->raw_data) {
+            audio_free(raw->raw_data);
+        }
+        audio_free(raw);
+    }
+}
+
 void app_music_play_policy(music_queue_t pQueue_data)
 {
     int ret = 0;
@@ -191,11 +202,13 @@ void app_music_play_policy(music_queue_t pQueue_data)
         ESP_LOGI(TAG, "policy 5: raw tts case");
         if (!current_music) {
             ESP_LOGE(TAG, "no current music, bug!!!");
+            raw_data_free((raw_data_t*)pQueue_data.data);
             return;
         }
         if (!(raw = (raw_data_t*)pQueue_data.data) ||
             !(raw->raw_data)) {
             ESP_LOGE(TAG, "raw data is empty");
+            raw_data_free(raw);
             return;
         }
         if (current_music->action_type == RAW_TTS ||
@@ -221,8 +234,7 @@ void app_music_play_policy(music_queue_t pQueue_data)
                 } else if (current_music->action_type == TTS_URL) {
                     // '宝宝巴士' case, need resume, keep music
                     //handle_play_cmd(CMD_HTTP_PLAY_START, (uint8_t *)current_music->data, 0);
-                    audio_free(raw->raw_data);
-                    audio_free(raw);
+                    raw_data_free(raw);
 
                     while (g_bdsc_engine->cur_in_asr_session) {
                         ESP_LOGW(TAG, "In asr session, delay HTTP Play!!!!");
@@ -259,8 +271,7 @@ void app_music_play_policy(music_queue_t pQueue_data)
                         ESP_LOGI(TAG, "async url success: %s", g_migu_music_url_out);
                         current_music->data = audio_strdup(g_migu_music_url_out);
                         xEventGroupClearBits(g_get_url_evt_group, GET_URL_REQUEST | GET_URL_SUCCESS | GET_URL_FAIL);
-                        audio_free(raw->raw_data);
-                        audio_free(raw);
+                        raw_data_free(raw);
 
                         while (g_bdsc_engine->cur_in_asr_session) {
                             ESP_LOGW(TAG, "In asr session, delay HTTP Play!!!!");
@@ -284,8 +295,7 @@ void app_music_play_policy(music_queue_t pQueue_data)
                     }
 
                     pls_delete_head_music(g_pls_handle); // fetch url fail, delete music
-                    audio_free(raw->raw_data);
-                    audio_free(raw);
+                    raw_data_free(raw);
                     return;
                 } else if (current_music->type == ACTIVE_TTS) {
                     // '您所播放的歌曲版权已过期' case, no need resume, remove music anyway
@@ -301,8 +311,7 @@ void app_music_play_policy(music_queue_t pQueue_data)
                         handle_play_cmd(CMD_HTTP_PLAY_RESUME, NULL, 0);
                         current_music->play_state = RUNNING_STATE;
                     }
-                    audio_free(raw->raw_data);
-                    audio_free(raw);
+                    raw_data_free(raw);
                     return;
                 } else if (current_music->type == MUSIC_CTL_PAUSE) {
                     // '暂停' case, no need resume, remove music anyway
@@ -313,8 +322,7 @@ void app_music_play_policy(music_queue_t pQueue_data)
                         handle_play_cmd(CMD_HTTP_PLAY_PAUSE, NULL, 0);
                         current_music->play_state = FORCE_PAUSE_STATE;
                     }
-                    audio_free(raw->raw_data);
-                    audio_free(raw);
+                    raw_data_free(raw);
                     return;
                 } else if (current_music->type == MUSIC_CTL_STOP) {
                     // '停止' case, no need resume, remove music anyway
@@ -322,16 +330,14 @@ void app_music_play_policy(music_queue_t pQueue_data)
                     // delete music
                     pls_delete_head_music(g_pls_handle);
                     audio_player_clear_audio_info();
-                    audio_free(raw->raw_data);
-                    audio_free(raw);
+                    raw_data_free(raw);
                     return;
                 } else {
                     ESP_LOGD(TAG, "unknow music, %d, %d", current_music->action_type, current_music->type);
                 }
             }
         }
-        audio_free(raw->raw_data);
-        audio_free(raw);
+        raw_data_free(raw);
         return;
     }
 
