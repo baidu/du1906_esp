@@ -127,10 +127,76 @@ This example is developed based on ADF and IDF, which is embeded in this package
 
 Please refer to [度家 AIOT 快速入门](https://cloud.baidu.com/doc/SHC/s/wk7bl9g8i) and apply for factory code (fc), product Key (pk), access key (ak) and secret key (sk) that should be then saved in `profiles/profile.bin`
 
-## 2.5 Jumpstart the example
-No need to compile the project, just use the firmware in this example.
 
-The firmware downloading flash address refer to follow table.
+## 2.5 Build and flash
+
+After the experience, it's time to build the example now! you can also add some features by yourself and then build it.
+
+### 2.5.1 Build
+
+You can use `GNU make` to build the project:
+```bash
+cd /path/to/dul1906_firmware/dul1906/
+make clean
+make menuconfig
+make -j4 all
+```
+
+
+### 2.5.2 Downloading
+
+In addition to `app.bin`, ESP32-Korvo-DU1906 example need three more bins:
+- DU1906_slave_v1.5.5.D.bin
+    This is DU1906 DSP fireware.
+- profile.bin
+    This file contains customized `FC` `PK` `AK` `SK` infomation.
+- audio_tone.bin
+    This file contains customized ring tone.
+
+If you want to flush all user info, download `nvs_blank.bin` also. 
+
+So the complete flashing command would be:
+
+```bash
+python $ADF_PATH/esp-idf/components/esptool_py/esptool/esptool.py --chip esp32 \
+--port PORT --baud 921600 \
+--before default_reset \
+--after hard_reset write_flash -z --flash_mode dio --flash_freq 80m --flash_size detect \
+0x1000   build/bootloader/bootloader.bin \
+0x8000   build/partitions.bin \
+0xd000   build/ota_data_initial.bin \
+0x10000  build/korvo_du1906.bin \
+0x610000 firmware/DU1906_slave_v1.5.5.D.bin \
+0xb55000 tone/audio_tone.bin \
+0xb10000 profiles/profile.bin \
+0xb51000 firmware/pre_build/nvs_blank.bin
+```
+
+Note： The `DU1906_slave_v1.5.5.D.bin` `audio_tone.bin` `profile.bin` `nvs_blank.bin` just need flash only once. You dont need to flash them in subsequent uploading process. You need only `make flash` to update your modified app.
+
+After Downloading, you can statup the app by using:
+```
+make monitor
+```
+
+### 2.5.3 Usage
+
+Please refer to 2.6 jumpstart part.
+
+### 2.5.4 OTA
+
+The application, flash tone and dsp bins upgrade are supported. Those bins can be store on HTTP Server, such as: https://github.com/espressif/esp-adf/raw/master/examples/korvo_du1906/firmware/app.bin. The bin files version checking after every booting. More infomation about OTA, please refer to `bdsc_ota` component.
+
+### 2.5.5. Generate audio bin
+You can update audio_tone.bin file by using follow command:
+```
+    python  $ADF_PATH/tools/audio_tone/mk_audio_tone.py -r tone/ -f components/audio_flash_tone 
+```
+
+## 2.6 Jumpstart the example
+If you don't want to compile the project, just use the prebuild firmware in this example!
+
+The firmware downloading flash address refer to following table.
 
 Flash address | Bin Path
 ---|---
@@ -138,17 +204,18 @@ Flash address | Bin Path
 0x8000 | partitions.bin
 0xD000 | ota_data_initial.bin
 0x10000 | korvo_du1906.bin
-0x570000 | DU1906_slave_v1.5.5.D.bin
+0x610000 | DU1906_slave_v1.5.5.D.bin
 0xB10000 | profile.bin
 0xB55000 | audio_tone.bin
 0xB51000 | nvs_blank.bin
 
-### 2.5.1 Download firmware
+### 2.6.1 Download firmware
 
-#### 2.5.1.1 Linux operating system
+#### 2.6.1.1 Linux operating system
 
-Run the command below:
+Run the command below:  
 **Note: replace /dev/ttyUSB0 with your real serial port name, e.g. in Macos, it would be /dev/cu.SLAB_USBtoUART**
+**Note: the command download default file from baidu, if you wand to download build file, please refer to 2.5.2 Downloading**
 ```bash
 python $IDF_PATH//components/esptool_py/esptool/esptool.py --chip esp32 \
 --port /dev/ttyUSB0 --baud 921600 \
@@ -163,7 +230,7 @@ python $IDF_PATH//components/esptool_py/esptool/esptool.py --chip esp32 \
 0xb10000    ./profiles/profile.bin \
 0xb51000    ./firmware/pre_build/nvs_blank.bin
 ```
-#### 2.5.1.2 Windows operating system
+#### 2.6.1.2 Windows operating system
 
 - **step 1:** [Download the firmware download tool](https://www.espressif.com/sites/default/files/tools/flash_download_tool_v3.8.5_0.zip) and unzip the compressed package, then run the executable file with ".exe" suffix.
 - **step 2:** Choose download mode (Developer Mode)
@@ -183,7 +250,7 @@ python $IDF_PATH//components/esptool_py/esptool/esptool.py --chip esp32 \
 
 After download firmware, press `[RST]` button, and then there will be some logs print on the serial port.
 
-### 2.5.2 Network configuration
+### 2.6.2 Network configuration
 
 - **step 1:** Download and install Blufi app on cell phone, [App for Andriod](https://github.com/EspressifApp/EspBlufiForAndroid/releases), [App for IOS](https://github.com/EspressifApp/EspBlufiForiOS/releases)
 - **step 2:** Open bluetooth and open blufi app on mobilephone, scan the device.
@@ -199,11 +266,11 @@ After download firmware, press `[RST]` button, and then there will be some logs 
 
 **Note: If configurate fails, check the above process and try again. Be careful and patient!**
 
-### 2.5.3 Features experience
+### 2.6.3 Features experience
 
 **Note that, please make sure that there is a speaker inserts to the board at least.**
 
-#### 2.5.3.1 Voice interaction
+#### 2.6.3.1 Voice interaction
 
 After configurate wifi information and connect to network, you can start a conversation with a voice wake-up word "xiaodu xiaodu", such as below supported command:
 - "小度小度" "在呢" "讲个笑话"
@@ -213,11 +280,11 @@ After configurate wifi information and connect to network, you can start a conve
 
 If you need more instructions, you can define them in the background of Baidu.
 
-#### 2.5.3.2 bluetooth music
+#### 2.6.3.2 bluetooth music
 
 Press `[MUTE]` button for 3-5s enter BT mode, open bluetooth on your phone and connect to device named "ESP_BT_COEX_DEV", and then you can play bt music on the device.
 
-#### 2.5.3.3 Buttons usage
+#### 2.6.3.3 Buttons usage
 Name of Button | Short press | Long press
 :-:|:-:|:-:
 VOL + | Volume up | NA
@@ -225,55 +292,11 @@ VOL - | Volume down| NA
 MUTE | Enter mute mode |Enter/Exit BT mode
 FUNC | NA |Setting Wi-Fi
 
-## 2.6 Build and flash
-
-After the experience, it's time to build the example now! you can also add some features by yourself and then build it.
-
-### 2.6.1 Build
-
-You can use `GNU make` to build the project:
-```bash
-cd /path/to/dul1906_firmware/dul1906/
-make clean
-make menuconfig
-make -j4 all
-```
-
-
-### 2.6.2 Downloading
-
-Download application with make
-```bash
-make flash monitor
-```
-
-In addition, ESP32-Korvo-DU1906 have three more bins, `./firmware/DU1906_slave_v1.5.5.D.bin`,  `./profiles/profile.bin` and `./tone/audio_tone.bin`. If you want to flush all user info, download `nvs_blank.bin` also.
-```bash
-python $ADF_PATH/esp-idf/components/esptool_py/esptool/esptool.py --chip esp32 \
---port PORT --baud 921600 \
---before default_reset \
---after hard_reset write_flash -z --flash_mode dio --flash_freq 80m --flash_size detect \
-0x610000 ./firmware/DU1906_slave_v1.5.5.D.bin \
-0xb10000 ./profiles/profile.bin \
-0xb55000 ./tone/audio_tone.bin
-```
-
-The firmware downloading flash address refer to above table in jumpstart part.
-
-### 2.6.3 Usage
-
-Please refer to jumpstart part.
-
-### 2.6.4 OTA
-
-The application, flash tone and dsp bins upgrade are supported. Those bins can be store on HTTP Server, such as, "https://github.com/espressif/esp-adf/raw/master/examples/korvo_du1906/firmware/app.bin". The bin files version checking after every booting. More infomation about OTA, please refer to `bdsc_ota` component.
-
-### 2.6.5. Generate audio bin
-    you will get audio_tone.bin file by using follow command:
-```
-    python  $ADF_PATH/tools/audio_tone/mk_audio_tone.py -r tone/ -f components/audio_flash_tone 
-```
-
+#### 2.6.3.4 dip switch usage  
+**Note: you have to make sure your dip switch are used correctly**  
+|Key Componenet | Description| 
+|:---:|:----|
+|dip    switch | The external mic array subboard interface is reserved ON ESP32-Korvo-DU1906. When the external mic array subboard is used, all the MIC array dip switches must be in OFF state. When the onboard mic array is used, all the MIC array dip switches must be in ON state.|
 ## 2.7 Example Output
 
 After download the follow logs should be output.
