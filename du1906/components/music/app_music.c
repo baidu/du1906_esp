@@ -325,12 +325,9 @@ void music_queue_policy_send(QueueHandle_t xQueue, const void *pvItemToQueue)
 
     /*
      * normal send
-     * return when queue is full or no music for tts
+     * return when queue is full for tts
      * data must be freed before returning
      */
-    if (!current_music && (music_data->type == RAW_TTS_DATA)) {
-        ERR_OUT(err, "no current music for tts data, bug!!!");
-    }
     if (!xQueueSend(xQueue, pvItemToQueue, 0)) {
         ERR_OUT(err, "queue send fail!");
     };
