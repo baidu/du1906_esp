@@ -99,7 +99,7 @@ static int parse_tts_header(tts_header_t *ret_header, char *begin, char *end)
         return -1;
     }
     char *content = cJSON_Print(json);
-    ESP_LOGI(TAG, "tts header json: %s", content);
+    ESP_LOGD(TAG, "tts header json: %s", content);
     free(content);
     cJSON *err = cJSON_GetObjectItem(json, "err");
     cJSON *idx = cJSON_GetObjectItem(json, "idx");
@@ -320,6 +320,7 @@ err_json_format:
     return -1;
 }
 
+char *json_buf = NULL;
 int32_t handle_bdsc_event(engine_elem_t elem)
 {
     bdsc_custom_desire_action_t desire = BDSC_CUSTOM_DESIRE_DEFAULT;
@@ -487,12 +488,23 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                                      extern_result->buffer_length - 12, extern_result->buffer + 12);
                             
                             g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_EXTERN_DATA;
+                            if(json_buf) {
+                                free(json_buf);
+                                json_buf = NULL;
+                            }
+                            if (extern_result->idx < 0) {
+                                json_buf = audio_calloc(1, extern_result->buffer_length + 1);
+                            } else {
+                                json_buf = audio_calloc(1, extern_result->buffer_length + 2048 + 1);  //多2048个byte for 拆包后的拼包。
+                                                                                                      //对于超过4k的nlp文字描述，中间文本丢弃，不参与json解析
+                            }
 
-                            char *json_buf = NULL;
-                            json_buf = audio_calloc(1, extern_result->buffer_length + 1);
                             memcpy(json_buf, extern_result->buffer + 12, extern_result->buffer_length);
-                            desire = notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
-                            free(json_buf);
+                            if(extern_result->idx < 0) {
+                                desire = notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
+                                free(json_buf);
+                                json_buf = NULL;
+                            }
                         }
                         break;
                     case ASR_TTS_ENGINE_GOT_EXTERN_DATA:
@@ -503,7 +515,14 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                                      extern_result->sn, extern_result->idx,
                                      extern_result->buffer_length, extern_result->buffer);
                             g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_EXTERN_DATA;
+                            if (extern_result->idx < 0 && json_buf) {
+                                memcpy(json_buf + strlen(json_buf), extern_result->buffer + 12, extern_result->buffer_length);
+                                desire = notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
+                                free(json_buf);
+                                json_buf = NULL;
+                            }
                         }
+
                         break;
                     case ASR_TTS_ENGINE_GOT_TTS_DATA:
                     case ASR_TTS_ENGINE_GOT_ASR_ERROR:

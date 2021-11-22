@@ -45,7 +45,7 @@
 static audio_thread_t next_song_task_handle = NULL;
 static TimerHandle_t next_song_timer_handle = NULL;
 #define SILENT_NEXT_TIME_EARLY      (15 * 1000)
-#define MUSIC_QUEUE_ITEM_NUM        256
+#define MUSIC_QUEUE_ITEM_NUM        512
 bool g_app_music_init_finish_flag = false;
 xQueueHandle g_music_queue_handle = NULL;
 
