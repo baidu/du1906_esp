@@ -56,6 +56,7 @@
 
 #define EVENT_ENGINE_QUEUE_LEN  256
 #define DEFAULT_WAKEUP_BACKTIME 200
+
 extern display_service_handle_t g_disp_serv;
 static TimerHandle_t reconnect_timer_hander = NULL;
 typedef struct _engine_elem_t {
@@ -99,7 +100,7 @@ static int parse_tts_header(tts_header_t *ret_header, char *begin, char *end)
         return -1;
     }
     char *content = cJSON_Print(json);
-    ESP_LOGI(TAG, "tts header json: %s", content);
+    ESP_LOGD(TAG, "tts header json: %s", content);
     free(content);
     cJSON *err = cJSON_GetObjectItem(json, "err");
     cJSON *idx = cJSON_GetObjectItem(json, "idx");
@@ -110,42 +111,83 @@ static int parse_tts_header(tts_header_t *ret_header, char *begin, char *end)
     return 0;
 }
 
+extern int handle_tts_package_data(bdsc_event_data_t *tts_data);
+/*
+ * function: get the complete package
+ *  origin package: struct | 2B | json data | 4B | raw mp3 data |
+ *  if origin package over than 2048 byte,it will be Unpacked multiple mini packets
+ *  tts_data idx ：the index of mini package
+ *  if tts_data idx < 0, the end of mini package
+ */
+int handle_package_data(bdsc_event_data_t *tts_data)
+{
+    int ret = -1;
+    static bdsc_event_data_t *p_data = NULL;
+    if(tts_data->idx == -1) { //package < 2K
+        ret = handle_tts_package_data(tts_data);
+        goto EXIT;
+    } else if (tts_data->idx < -1) { //last mini package
+        if (p_data) {
+            p_data = realloc(p_data, sizeof(bdsc_event_data_t) + p_data->buffer_length + tts_data->buffer_length);
+            memcpy((uint8_t*)p_data + sizeof(bdsc_event_data_t) + p_data->buffer_length, tts_data->buffer, tts_data->buffer_length);
+            p_data->idx = tts_data->idx;
+            p_data->buffer_length += tts_data->buffer_length;
+            ret = handle_tts_package_data(p_data);
+            ESP_LOGE(TAG, "%s", (char *)(p_data->buffer) + 2);
+            ERR_OUT(EXIT, "receive end mini package");
+        }
+        return -1;
+    } else {
+        if (p_data == NULL) {
+            p_data = audio_calloc(1, sizeof(bdsc_event_data_t) + tts_data->buffer_length);
+            if (p_data == NULL) {
+                ERR_OUT(EXIT, "alloc mem fail!!!");
+            }
+            memcpy(p_data, tts_data, sizeof(bdsc_event_data_t) + tts_data->buffer_length);
+        } else {
+            p_data = realloc(p_data, sizeof(bdsc_event_data_t) + p_data->buffer_length + tts_data->buffer_length);
+            memcpy((uint8_t*)p_data + sizeof(bdsc_event_data_t) + p_data->buffer_length, tts_data->buffer, tts_data->buffer_length);
+            p_data->buffer_length += tts_data->buffer_length;
+        }
+        return -2;
+    }
+EXIT:
+    if(p_data) {
+        audio_free(p_data);
+        p_data = NULL;
+    }
+    return ret;
+}
+
 /*
  *  origin package: | 2B | json data | 4B | raw mp3 data |
- *  if origin package over than 2048 byte,it will be Unpacked multiple mini packets
- *  idx ：the index of mini package
- *  if idx < 0, the end of mini package
  */
 int handle_tts_package_data(bdsc_event_data_t *tts_data)
 {
-    static tts_header_t header = {0};
+    tts_header_t header = {0};
     tts_pkg_t tts_pkg = {0};
-    if(tts_data->idx == 1 || tts_data->idx == -1) {   //first mini package
-        tts_pkg.json_len = covert_to_short((char*)tts_data->buffer);
-        tts_pkg.raw_len = tts_data->buffer_length - sizeof(tts_pkg.json_len)\
-                          - sizeof(tts_pkg.raw_len) - tts_pkg.json_len;
-        if (tts_pkg.raw_len < 0) {
-            ERR_OUT(ERROR_RAW, "raw length is invalid");
-        }
-        tts_pkg.json_data = (uint8_t*)tts_data->buffer + sizeof(tts_pkg.json_len);
-        tts_pkg.raw_data = (uint8_t*)tts_data->buffer + sizeof(tts_pkg.json_len)\
-                           + sizeof(tts_pkg.raw_len) + tts_pkg.json_len;
-        int ret = parse_tts_header(&header, (char *)tts_pkg.json_data, NULL);
-        if (ret) {
-            ERR_OUT(ERROR_JSON, "parse json fail");
-        }
-        if (header.err) {
-            ERR_OUT(ERROR_JSON, "tts stream error, err: %d", header.err);
-        }
-    } else {
-        tts_pkg.raw_data = (uint8_t*)tts_data->buffer;
-        tts_pkg.raw_len = tts_data->buffer_length;
+    tts_pkg.json_len = covert_to_short((char*)tts_data->buffer);
+    tts_pkg.raw_len = tts_data->buffer_length - sizeof(tts_pkg.json_len)\
+                       - sizeof(tts_pkg.raw_len) - tts_pkg.json_len;
+    if (tts_pkg.raw_len < 0) {
+        ERR_OUT(ERROR_RAW, "raw length is invalid");
     }
+    tts_pkg.json_data = (uint8_t*)tts_data->buffer + sizeof(tts_pkg.json_len);
+    tts_pkg.raw_data = (uint8_t*)tts_data->buffer + sizeof(tts_pkg.json_len)\
+                        + sizeof(tts_pkg.raw_len) + tts_pkg.json_len;
+    int ret = parse_tts_header(&header, (char *)tts_pkg.json_data, NULL);
+    if (ret) {
+        ERR_OUT(ERROR_JSON, "parse json fail");
+    }
+    if (header.err) {
+        ERR_OUT(ERROR_JSON, "tts stream error, err: %d", header.err);
+    }
+
     raw_data_t *raw = (raw_data_t*)audio_calloc(1, sizeof(raw_data_t));
     raw->raw_data = (uint8_t*)audio_calloc(1, tts_pkg.raw_len);
     memcpy(raw->raw_data, tts_pkg.raw_data, tts_pkg.raw_len);
     raw->raw_data_len = tts_pkg.raw_len;
-    if((header.idx < 0) && (tts_data->idx < 0)) {
+    if(header.idx < 0) {
         raw->is_end = true;
     } else {
         raw->is_end = false;
@@ -320,6 +362,7 @@ err_json_format:
     return -1;
 }
 
+static char *json_buf = NULL;
 int32_t handle_bdsc_event(engine_elem_t elem)
 {
     bdsc_custom_desire_action_t desire = BDSC_CUSTOM_DESIRE_DEFAULT;
@@ -487,12 +530,26 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                                      extern_result->buffer_length - 12, extern_result->buffer + 12);
                             
                             g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_EXTERN_DATA;
-
-                            char *json_buf = NULL;
-                            json_buf = audio_calloc(1, extern_result->buffer_length + 1);
+                            if (json_buf) {
+                                free(json_buf);
+                                json_buf = NULL;
+                            }
+                            if (extern_result->idx < 0) {
+                                json_buf = audio_calloc(1, extern_result->buffer_length + 1);
+                            } else {
+                                json_buf = audio_calloc(1, extern_result->buffer_length + 2048 + 1);  //多2048个byte for 拆包后的拼包。
+                                                                                                      //对于超过4k的nlp文字描述，中间文本丢弃，不参与json解析
+                            }
+                            if (json_buf == NULL) {
+                                ESP_LOGE(TAG, "audio_calloc json buff fail");
+                                break;
+                            }
                             memcpy(json_buf, extern_result->buffer + 12, extern_result->buffer_length);
-                            desire = notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
-                            free(json_buf);
+                            if(extern_result->idx < 0) {                                              //nlp data end
+                                desire = notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
+                                free(json_buf);
+                                json_buf = NULL;
+                            }
                         }
                         break;
                     case ASR_TTS_ENGINE_GOT_EXTERN_DATA:
@@ -503,7 +560,14 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                                      extern_result->sn, extern_result->idx,
                                      extern_result->buffer_length, extern_result->buffer);
                             g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_EXTERN_DATA;
+                            if (extern_result->idx < 0 && json_buf) {
+                                memcpy(json_buf + strlen(json_buf), extern_result->buffer + 12, extern_result->buffer_length);
+                                desire = notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
+                                free(json_buf);
+                                json_buf = NULL;
+                            }
                         }
+
                         break;
                     case ASR_TTS_ENGINE_GOT_TTS_DATA:
                     case ASR_TTS_ENGINE_GOT_ASR_ERROR:
@@ -539,7 +603,7 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                                      tts_data->buffer_length, tts_data->buffer);
 
                             if (!need_skip_current_playing()) {
-                                int ret = handle_tts_package_data(tts_data);
+                                int ret = handle_package_data(tts_data);
                                 if (ret == -1 && tts_data->idx == 0) {
                                     // if the first tts data is error, skip current playing
                                     bdsc_engine_skip_current_session_playing_once_flag_set(g_bdsc_engine);

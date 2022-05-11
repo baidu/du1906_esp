@@ -47,7 +47,7 @@ void handle_play_cmd(int cmd, uint8_t *buffer, size_t len)
             //audio_player_music_play("raw://sdcard/ut/test.mp3", 0, MEDIA_SRC_TYPE_MUSIC_RAW);
             break;
         case CMD_RAW_PLAY_FEED_DATA:
-            ESP_LOGW(TAG, "==> CMD_RAW_PLAY_FEED_DATA");
+            ESP_LOGD(TAG, "==> CMD_RAW_PLAY_FEED_DATA");
             // Sometime need about 1000ms return from function.
             // Can asynchronously call stop function to stop it immediately.
             audio_player_raw_feed_data(buffer, len);

@@ -45,7 +45,7 @@
 static audio_thread_t next_song_task_handle = NULL;
 static TimerHandle_t next_song_timer_handle = NULL;
 #define SILENT_NEXT_TIME_EARLY      (15 * 1000)
-#define MUSIC_QUEUE_ITEM_NUM        256
+#define MUSIC_QUEUE_ITEM_NUM        512
 bool g_app_music_init_finish_flag = false;
 xQueueHandle g_music_queue_handle = NULL;
 
@@ -325,8 +325,22 @@ void music_queue_policy_send(QueueHandle_t xQueue, const void *pvItemToQueue)
 
     /*
      * normal send
+     * return when queue is full for tts
+     * data must be freed before returning
      */
-    xQueueSend(xQueue, pvItemToQueue, 0);
+    if (!xQueueSend(xQueue, pvItemToQueue, 0)) {
+        ERR_OUT(err, "queue send fail!");
+    };
+    return;
+
+err:
+    if (music_data->type == RAW_TTS_DATA) {
+        raw_data_t *raw = (raw_data_t*)music_data->data;
+        audio_free(raw->raw_data);
+    }
+    if (music_data->data) {
+        audio_free(music_data->data);
+    }
 }
 
 void send_music_queue(music_type_t type, void *pdata)
