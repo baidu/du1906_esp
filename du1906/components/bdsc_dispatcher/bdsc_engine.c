@@ -168,23 +168,8 @@ static int32_t bdsc_event_callback(bds_client_event_t *event, void *custom)
 
 void start_sdk()
 {
-    int err = bds_client_start(g_bdsc_engine->g_client_handle);
-    if (err) {
-        ESP_LOGE(MAIN_TAG, "bds_client_start failed");
-        bdsc_play_hint(BDSC_HINT_DSP_LOAD_FAIL);
-    }
-}
-
-/*generated cuid info*/
-static int generate_cuid_info()
-{
-    if (!g_bdsc_engine) {
-        ESP_LOGE(MAIN_TAG, "g_bdsc_engine is NULL");
-        return -1;
-    }
     if (g_bdsc_engine->cuid[0] == '\0') {
-        if (g_bdsc_engine->g_vendor_info &&
-            g_bdsc_engine->g_vendor_info->fc &&
+        if (g_bdsc_engine->g_vendor_info->fc &&
             g_bdsc_engine->g_vendor_info->pk &&
             g_bdsc_engine->g_vendor_info->ak) {
 
@@ -195,10 +180,14 @@ static int generate_cuid_info()
             ESP_LOGI(MAIN_TAG, "cuid: %s", g_bdsc_engine->cuid);
         } else {
             ESP_LOGE(MAIN_TAG, "generate cuid failed!");
-            return -1;
+            return;
         }
     }
-    return 0;
+    int err = bds_client_start(g_bdsc_engine->g_client_handle);
+    if (err) {
+        ESP_LOGE(MAIN_TAG, "bds_client_start failed");
+        bdsc_play_hint(BDSC_HINT_DSP_LOAD_FAIL);
+    }
 }
 
 void config_sdk(bds_client_handle_t handle)
@@ -215,9 +204,6 @@ void config_sdk(bds_client_handle_t handle)
     char sn[BDSC_MAX_UUID_LEN];
     generate_uuid(sn);
     char *pam_data = "";//iot don't authentication when connect server
-    if (generate_cuid_info()) {
-       ESP_LOGE(MAIN_TAG, "long link will be terrible if cuid is null");
-    }
     bdsc_engine_params_t *engine_params = bdsc_engine_params_create_wrapper(sn, "du1906_app", strlen(pam_data) + 1, pam_data);
     bds_client_params_t params;
     memset(&params, 0 , sizeof(bds_client_params_t));
