@@ -55,6 +55,16 @@ typedef enum {
     MUSIC_CTL_CONTINUE,
     MUSIC_CTL_PAUSE,
     MUSIC_CTL_STOP,
+#ifndef DUHOME_BDVS_DISABLE
+    BDVS_SPEECH_MUSIC,
+    BDVS_RAW_TTS_DATA,
+    BDVS_TONE_MUSIC,
+    BDVS_URL_MUSIC,
+    BDVS_ID_MUSIC,
+    BDVS_MUSIC_CTL_CONTINUE,
+    BDVS_MUSIC_CTL_PAUSE,
+    BDVS_MUSIC_CTL_STOP,
+#endif
 } music_type_t;
 
 typedef enum {
@@ -83,11 +93,25 @@ typedef struct _music_queue {
     music_user_cb   user_cb;
 } music_queue_t;
 
+#ifndef DUHOME_BDVS_DISABLE
+typedef enum {
+    MUSIC_CTL_SM_ST_STOPPED,
+    MUSIC_CTL_SM_ST_PAUSED,
+    MUSIC_CTL_SM_ST_PLAYING,
+    MUSIC_CTL_SM_ST_REQESTING_NEXT,
+    MUSIC_CTL_SM_ST_CACHEING_NEXT,
+} music_ctl_sm_t;
+
+extern music_ctl_sm_t g_music_ctl_sm;
+#endif
 extern xQueueHandle g_music_queue_handle;
 
 int app_music_init(void);
 
 void send_music_queue(music_type_t type, void *pdata);
+#ifndef DUHOME_BDVS_DISABLE
+void bdvs_send_music_queue(music_type_t type, void *pdata);
+#endif
 
 #ifdef __cplusplus
 }

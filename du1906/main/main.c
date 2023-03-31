@@ -34,6 +34,8 @@
 
 #define TAG "MAIN"
 
+extern int receive_nlp_data_handle(char *in_str);
+
 bool need_skip_current_playing()
 {
     /* 用户在某些特定应用场景下需要跳过当前session的 asr tts 处理 */
@@ -210,21 +212,26 @@ esp_err_t my_bdsc_engine_event_handler(bdsc_engine_event_t *evt)
          *
          * TIPS: 随 NLP 一起下发的TTS语音流，由SDK自动播放，暂时不对用户开放。
          */
-
-        cJSON *j_content = NULL;
-        /* 某些情况下，需要跳过当前会话 */
-        if (need_skip_current_playing()) {
-            ESP_LOGI(TAG, "skip playing");
-            return BDSC_CUSTOM_DESIRE_SKIP_DEFAULT;
-        }
-        if (!(j_content = BdsJsonParse((const char *)evt->data))) {
-            ESP_LOGE(TAG, "json format error");
-            return BDSC_CUSTOM_DESIRE_SKIP_DEFAULT;
-        }
+#ifdef DUHOME_BDVS_DISABLE
+         cJSON *j_content = NULL;
+         /* 某些情况下，需要跳过当前会话 */
+         if (need_skip_current_playing()) {
+             ESP_LOGI(TAG, "skip playing");
+             return BDSC_CUSTOM_DESIRE_SKIP_DEFAULT;
+         }
+         if (!(j_content = BdsJsonParse((const char *)evt->data))) {
+             ESP_LOGE(TAG, "json format error");
+             return BDSC_CUSTOM_DESIRE_SKIP_DEFAULT;
+         }
 
         app_voice_control_feed_data(j_content, NULL);
-
         BdsJsonPut(j_content);
+#else
+        err_value = receive_nlp_data_handle((char *)evt->data);
+        if (err_value != 0) {
+            ESP_LOGE(TAG, "the nlp result is error");
+        }
+#endif
         return BDSC_CUSTOM_DESIRE_DEFAULT;
 
     case BDSC_EVENT_ON_CHANNEL_DATA:

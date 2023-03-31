@@ -45,12 +45,20 @@
 #include "bds_private.h"
 #include "app_music.h"
 
+#ifndef DUHOME_BDVS_DISABLE
+#include "bdvs_active_device_handler.h"
+#include "bdvs_media_common_handler.h"
+#include "bdvs_active_tts_handler.h"
+#include "bdvs_intent_handler.h"
+#endif
+
 #define  MAIN_TAG  "BDSC_ENGINE"
 #define TTS_URI_BUFFER_LEN 4096
 
 bdsc_engine_handle_t g_bdsc_engine;
 extern display_service_handle_t g_disp_serv;
 extern esp_wifi_setting_handle_t g_wifi_setting;
+extern int receive_data_handle_init();
 
 static int32_t bdsc_event_callback(bds_client_event_t *event, void *custom)
 {
@@ -158,6 +166,47 @@ static int32_t bdsc_event_callback(bds_client_event_t *event, void *custom)
             event_engine_elem_EnQueque(EVENT_DSP_FATAL_ERROR, error, sizeof(bdsc_event_error_t) + error->info_length);
             break;
         }
+#ifndef DUHOME_BDVS_DISABLE
+        case EVENT_EVENTUPLOAD_BEGIN:
+        {
+            ESP_LOGI(MAIN_TAG, "begin to upload event data");
+            event_engine_elem_EnQueque(EVENT_EVENTUPLOAD_BEGIN, event->content, sizeof(bdsc_event_process_t));
+            break;
+        }
+        case EVENT_EVENTUPLOAD_END:
+        {
+            ESP_LOGI(MAIN_TAG, "upload event end");
+            event_engine_elem_EnQueque(EVENT_EVENTUPLOAD_END, event->content, sizeof(bdsc_event_process_t));
+            break;
+        }
+        case EVENT_EVENTUPLOAD_ERROR:
+        {
+            bdsc_event_error_t *error = (bdsc_event_error_t*)event->content;
+            ESP_LOGI(MAIN_TAG, "upload event error");
+            event_engine_elem_EnQueque(EVENT_EVENTUPLOAD_ERROR, event->content, sizeof(bdsc_event_error_t) + error->info_length);
+            break;
+        }
+        case EVENT_EVENTUPLOAD_DATA:
+        {
+            bdsc_event_data_t *rec_event_data = (bdsc_event_data_t*)event->content;
+            ESP_LOGI(MAIN_TAG, "receive the event back data: %s", rec_event_data->buffer);
+            event_engine_elem_EnQueque(EVENT_EVENTUPLOAD_DATA, event->content, sizeof(bdsc_event_data_t) + rec_event_data->buffer_length);
+            break;
+        }
+        case EVENT_EVENTUPLOAD_CANCEL:
+        {
+            ESP_LOGI(MAIN_TAG, "cancel the event upload");
+            event_engine_elem_EnQueque(EVENT_EVENTUPLOAD_CANCEL, event->content, sizeof(bdsc_event_process_t));
+            break;
+        }
+        case EVENT_EVENTUPLOAD_TTS:
+        {
+            ESP_LOGI(MAIN_TAG, "get the event upload tts data");
+            bdsc_event_data_t * tts_data = (bdsc_event_data_t*)event->content;
+            event_engine_elem_EnQueque(EVENT_EVENTUPLOAD_TTS, event->content, sizeof(bdsc_event_data_t) + tts_data->buffer_length);
+            break;
+        }
+#endif
         default:
             ESP_LOGE(MAIN_TAG, "!!! unknow event %d!!!", event->key);
             break;
@@ -282,11 +331,20 @@ esp_err_t my_bdsc_auth_cb(auth_result_t *result)
 
 void startup_system()
 {
+#ifndef DUHOME_BDVS_DISABLE
+    receive_data_handle_init();
+    media_handle_init();
+    intent_handle_init();
+    start_active_device_task(); // start active task
+#endif
     bdsc_asr_tts_engine_init();
 
     bdsc_sdk_init();
-
+#ifndef DUHOME_BDVS_DISABLE
+    active_tts_handle_init(); // init the active tts data handle
+#else
     mqtt_task_init();
+#endif
 }
 
 void check_smartconfig_on_boot();
@@ -326,6 +384,7 @@ bdsc_engine_handle_t bdsc_engine_init(bdsc_engine_config_t *cfg)
         g_bdsc_engine->sc_customer_data = audio_strdup(customer_data);
     }
     check_smartconfig_on_boot();
+#ifdef DUHOME_BDVS_DISABLE
     if (g_vendor_info->mqtt_broker[0] == '\0' ||
         g_vendor_info->mqtt_username[0] == '\0' ||
         g_vendor_info->mqtt_password[0] == '\0' ||
@@ -334,6 +393,9 @@ bdsc_engine_handle_t bdsc_engine_init(bdsc_engine_config_t *cfg)
     } else {
         startup_system();
     }
+#else
+    startup_system();
+#endif
 
     return g_bdsc_engine;
 }
@@ -376,6 +438,7 @@ esp_err_t bdsc_engine_deinit(bdsc_engine_handle_t client)
     return ESP_OK;
 }
 
+#ifdef DUHOME_BDVS_DISABLE
 void bdsc_engine_start_tts(const char *tts_text)
 {
     ESP_LOGI(MAIN_TAG, "==> bdsc_engine_start_tts");
@@ -389,4 +452,4 @@ void bdsc_engine_start_tts(const char *tts_text)
     strncat(buffer, tts_text, TTS_URI_BUFFER_LEN - strlen(buffer));
     send_music_queue(ACTIVE_TTS, buffer);
 }
-
+#endif

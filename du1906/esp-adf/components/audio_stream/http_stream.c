@@ -326,6 +326,7 @@ static char *_playlist_get_next_track(audio_element_handle_t self)
     return NULL;
 }
 
+#ifdef DUHOME_BDVS_DISABLE
 int generate_active_tts_pam(char* tts_text, char* pam_prama, size_t max_len);
 #define POST_BUFF_LEN 4096
 int active_tts_process(char *tts_text, audio_element_handle_t self, audio_element_info_t info)
@@ -410,6 +411,7 @@ ERR_RET:
     audio_free(post_data);
     return err;
 }
+#endif
 
 static esp_err_t _http_open(audio_element_handle_t self)
 {
@@ -445,9 +447,11 @@ _stream_open_begin:
     }
     audio_element_getinfo(self, &info);
     ESP_LOGD(TAG, "URI=%s", uri);
+#ifdef DUHOME_BDVS_DISABLE
     if (!strncmp(uri, ACTIVE_TTS_PREFIX, strlen(ACTIVE_TTS_PREFIX))) {
         return active_tts_process(uri + strlen(ACTIVE_TTS_PREFIX), self, info);
     }
+#endif
     // if not initialize http client, initial it
     if (http->client == NULL) {
         esp_http_client_config_t http_cfg = {

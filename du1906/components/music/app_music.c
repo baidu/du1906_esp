@@ -40,6 +40,7 @@
 #include "play_list.h"
 #include "migu_music_service.h"
 #include "migu_sdk_helper.h"
+#include "bdvs_media_common_handler.h"
 
 #define TAG "MUSIC_TASK"
 static audio_thread_t next_song_task_handle = NULL;
@@ -73,7 +74,13 @@ void next_song_callback(TimerHandle_t xTimer)
 * why not request for the next song directly
 * beacause it's going to pause 1&2 second when play url music, so request next song task run core 1, play task run core 2
 */
+#ifndef DUHOME_BDVS_DISABLE
+    media_control_event_next("music");
+    ESP_LOGW(TAG, "g_music_ctl_sm => MUSIC_CTL_SM_ST_CACHEING_NEXT");
+    g_music_ctl_sm = MUSIC_CTL_SM_ST_CACHEING_NEXT;
+#else
     xTaskNotifyGive(next_song_task_handle);
+#endif
 }
 
 int next_song_user_cb(void *ctx)
@@ -145,7 +152,7 @@ static void pause_current_http_music_if_needed()
 static void app_music_task(void *pvParameters)
 {
     music_queue_t pQueue_data;
-
+#ifdef DUHOME_BDVS_DISABLE
     vTaskDelay(2000);
     if (!g_bdsc_engine->g_vendor_info->is_active_music_license) {
         ESP_LOGW(TAG, "start active music license");
@@ -158,6 +165,7 @@ static void app_music_task(void *pvParameters)
             }
         }
     }
+#endif
     while (1) {
         if (g_music_queue_handle && xQueueReceive(g_music_queue_handle, &pQueue_data, portMAX_DELAY) == pdPASS) {
             switch (pQueue_data.type) {
@@ -350,9 +358,9 @@ void send_music_queue(music_type_t type, void *pdata)
     music_play_state_t current_state;
     bool need_async = true;
     
-    //ESP_LOGI(TAG, "==> send_music_queue");
+    ESP_LOGI(TAG, "==> send_music_queue");
     current_state = pls_get_current_music_player_state(g_pls_handle);
-    //ESP_LOGD(TAG, "cur state: %d", current_state);
+    ESP_LOGD(TAG, "cur state: %d", current_state);
 
     if (type != ALL_TYPE && !pdata) {
         ERR_OUT(ERR_RET, "pdata is null");
@@ -429,7 +437,100 @@ void send_music_queue(music_type_t type, void *pdata)
 ERR_RET:
     return;
 }
+#ifndef DUHOME_BDVS_DISABLE
+music_ctl_sm_t g_music_ctl_sm = MUSIC_CTL_SM_ST_STOPPED;
 
+void bdvs_send_music_queue(music_type_t type, void *pdata)
+{
+    music_queue_t music_data;
+    music_play_state_t current_state;
+    bool need_async = true;
+
+    // ESP_LOGI(TAG, "==> bdvs_send_music_queue");
+    current_state = pls_get_current_music_player_state(g_pls_handle);
+    //ESP_LOGD(TAG, "cur state: %d", current_state);
+
+    memset(&music_data, 0, sizeof(music_queue_t));
+    music_data.type = type;
+    switch (type) {
+    case ALL_TYPE:
+        if (PAUSE_STATE == current_state) { // paused, need resume
+            music_data.action  = PLAY_MUSIC;
+        } else {
+            music_data.action  = NEXT_MUSIC;
+        }
+        break;
+    case BDVS_URL_MUSIC:
+        music_data.type = URL_MUSIC;
+        if (g_music_ctl_sm == MUSIC_CTL_SM_ST_CACHEING_NEXT) {
+            // auto cache next music
+            ESP_LOGE(TAG, "auto cache next music case");
+            music_data.action = CACHE_MUSIC;
+            music_data.action_type = -1; // no action type
+        } else if (g_music_ctl_sm == MUSIC_CTL_SM_ST_REQESTING_NEXT) {  // 这个分支应该永远不会走到，"下一首" 和 "我想听" 没法区分
+            // playing state -> want next
+            // tts + url
+            ESP_LOGE(TAG, "tts+url case");
+            music_data.action = CHANGE_TO_NEXT_MUSIC;
+            music_data.action_type = TTS_URL;
+        } else {
+            // idle state -> want play
+            ESP_LOGE(TAG, "want play case");
+            music_data.action = PLAY_MUSIC;
+            music_data.action_type = TTS_URL;
+        }
+
+        ESP_LOGE(TAG, "g_music_ctl_sm => MUSIC_CTL_SM_ST_PLAYING");
+        g_music_ctl_sm = MUSIC_CTL_SM_ST_PLAYING;
+        music_data.user_cb = next_song_user_cb; // ID/URL MUSIC need auto cache next song logic
+        music_data.data = audio_strdup((char*)pdata);
+        break;
+    case BDVS_SPEECH_MUSIC:
+        ESP_LOGE(TAG, "==> BDVS_SPEECH_MUSIC, start send music queue");
+        // re-use speech_music logic
+        music_data.type = SPEECH_MUSIC;
+        music_data.action_type = RAW_TTS;
+        break;
+    case BDVS_RAW_TTS_DATA:
+        // re-use raw_tts_music logic
+        music_data.type = RAW_TTS_DATA;
+        music_data.data = pdata;
+        break;
+    case BDVS_TONE_MUSIC:
+        // re-use tone_music logic
+        music_data.type = TONE_MUSIC;
+        music_data.data = pdata;
+        break;
+    case BDVS_MUSIC_CTL_CONTINUE:
+        // re-use continue logic
+        music_data.type = MUSIC_CTL_CONTINUE;
+        music_data.data = NULL;
+        break;
+    case BDVS_MUSIC_CTL_PAUSE:
+        // re-use pause logic
+        music_data.type = MUSIC_CTL_PAUSE;
+        music_data.data = NULL;
+        break;
+    case BDVS_MUSIC_CTL_STOP:
+        // re-use stop logic
+        music_data.type = MUSIC_CTL_STOP;
+        music_data.data = NULL;
+        break;
+    // TODO: other cases ...
+    default:
+        break;
+    }
+
+    ESP_LOGI(TAG, "==> bdvs_send_music_queue,  action: %d, type: %d, data: %s, action_type:%d", \
+        music_data.action, music_data.type, \
+        (music_data.data ? music_data.data : "NULL"), \
+        music_data.action_type);
+    music_queue_policy_send(g_music_queue_handle, (void*)&music_data);
+
+// ERR_RET:
+//     return;
+}
+#endif
 int app_music_init(void)
 {
     int ret = -1;
