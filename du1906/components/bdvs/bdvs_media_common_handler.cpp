@@ -27,6 +27,8 @@
 #include "bdvs_protocol_helper.hpp"
 #include "receive_data_filter.h"
 
+#include "audio_player.h"
+
 #define TAG "MEDIA_COMMON"
 
 // next media
@@ -52,7 +54,63 @@ static int media_handle_callback(cJSON *action)
     return BdvsProtoHelper::bdvs_action_media_play_parse(action);
 }
 
+static int media_pause_handle_callback(cJSON *action)
+{
+    ESP_LOGI("media_handle", "media pause handle callback enter ==>");
+    bdsc_play_hint(BDSC_HINT_HAODE);
+    vTaskDelay(500);
+    bdvs_send_music_queue(BDVS_MUSIC_CTL_PAUSE, nullptr);
+    return 0;
+}
+
+static int media_stop_handle_callback(std::string in_value)
+{
+    ESP_LOGI("media_handle","media stop handle callback enter ==>");
+    bdsc_play_hint(BDSC_HINT_HAODE);
+    vTaskDelay(500);
+    bdvs_send_music_queue(BDVS_MUSIC_CTL_STOP, nullptr);
+    return 0;
+}
+
+static int media_continue_handle_callback(cJSON *action)
+{
+    ESP_LOGI("media_handle","media continue handle callback enter ==>");
+    bdsc_play_hint(BDSC_HINT_HAODE);
+    vTaskDelay(500);
+    bdvs_send_music_queue(BDVS_MUSIC_CTL_CONTINUE, nullptr);
+    return 0;
+}
+
+static int volume_down_handle_callback(std::string in_value)
+{
+    ESP_LOGI("media_handle","volume down handle callback enter ==>");
+    bdsc_play_hint(BDSC_HINT_HAODE);
+    int player_volume = 0;
+    audio_player_vol_get(&player_volume);
+    player_volume = (player_volume >10) ? player_volume -10 : 0;
+    audio_player_vol_set(player_volume);
+    ESP_LOGW("media_handle", "VOICE_CTL_VOL_DOWN");
+    return 0;
+}
+
+static int volume_up_handle_callback(std::string in_value)
+{
+    ESP_LOGI("media_handle","volume up handle callback enter ==>");
+    bdsc_play_hint(BDSC_HINT_HAODE);
+    int player_volume = 0;
+    audio_player_vol_get(&player_volume);
+    player_volume = (player_volume < 90)?player_volume +10:100;
+    audio_player_vol_set(player_volume);
+    ESP_LOGW("media_handle", "VOICE_CTL_VOL_UP");
+    return 0;
+}
+
 void media_handle_init()
 {
     add_new_action_handle("media.play", media_handle_callback);
+    add_new_action_handle("media.pause", media_pause_handle_callback);
+    add_new_action_handle("media.continue", media_continue_handle_callback);
+    add_new_intent_handle("sys_command", "stop", media_stop_handle_callback);
+    add_new_intent_handle("sys_command", "down_volume", volume_down_handle_callback);
+    add_new_intent_handle("sys_command", "up_volume", volume_up_handle_callback);
 }

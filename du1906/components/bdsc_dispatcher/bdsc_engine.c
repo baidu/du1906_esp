@@ -267,6 +267,7 @@ void config_sdk(bds_client_handle_t handle)
     if (generate_cuid_info()) {
        ESP_LOGE(MAIN_TAG, "long link will be terrible if cuid is null");
     }
+    ESP_LOGI(MAIN_TAG, "sn: %s cuid:%s",sn, g_bdsc_engine->cuid);
     bdsc_engine_params_t *engine_params = bdsc_engine_params_create_wrapper(sn, "du1906_app", strlen(pam_data) + 1, pam_data);
     bds_client_params_t params;
     memset(&params, 0 , sizeof(bds_client_params_t));

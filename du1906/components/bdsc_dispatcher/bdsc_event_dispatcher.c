@@ -544,7 +544,7 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                                 ESP_LOGE(TAG, "audio_calloc json buff fail");
                                 break;
                             }
-                            memcpy(json_buf, extern_result->buffer + 12, extern_result->buffer_length);
+                            memcpy(json_buf, extern_result->buffer + 12, extern_result->buffer_length - 12);
                             if(extern_result->idx < 0) {                                              //nlp data end
                                 desire = notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
                                 free(json_buf);
@@ -554,14 +554,14 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                         break;
                     case ASR_TTS_ENGINE_GOT_EXTERN_DATA:
                         ESP_LOGI(TAG, "got 1+ extern data");
-                        // EXTERN_DATA 长度如果大于2048字节，会分包发送
+                        // EXTERN_DATA 长度如果大于2048字节，会分包发送，并且 buffer 不需要偏移 12 个字节
                         if (extern_result) {
                             ESP_LOGW(TAG, "---> EVENT_ASR_EXTERN_DATA sn=%s, idx=%d, buffer_length=%d, buffer=%s",
                                      extern_result->sn, extern_result->idx,
                                      extern_result->buffer_length, extern_result->buffer);
                             g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_EXTERN_DATA;
                             if (extern_result->idx < 0 && json_buf) {
-                                memcpy(json_buf + strlen(json_buf), extern_result->buffer + 12, extern_result->buffer_length);
+                                memcpy(json_buf + strlen(json_buf), extern_result->buffer, extern_result->buffer_length);
                                 desire = notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
                                 free(json_buf);
                                 json_buf = NULL;

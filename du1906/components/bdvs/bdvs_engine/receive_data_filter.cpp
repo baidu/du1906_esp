@@ -41,7 +41,6 @@ static int action_class_handle(cJSON *in_value)
             bds_hh2_loge(TAG, "no %s handle action function", act_name->valuestring);
             return -1;
         }
-bds_hh2_logi(TAG, "enter %s", __func__);
         int ret = action_handle[actname](in_value);
         if (ret < 0) {
             bds_hh2_loge(TAG, "handle action failed");
