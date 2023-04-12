@@ -291,7 +291,7 @@ static void bdsc_sdk_init()
     bds_set_log_level(g_bdsc_engine->cfg->log_level);
     start_sdk();
     audio_player_waiting_idle_st(10*1000);   //avoiding handshark interrupt boot music
-    bdsc_link_start();
+    //bdsc_link_start();   //start link server after active device.
     bdsc_start_wakeup();
 
     esp_log_level_set("wakeup_hal", ESP_LOG_WARN);

@@ -11,11 +11,19 @@
 #include "bdsc_tools.h"
 
 static const int pid = 1665;
-
 int get_bds_primary_pid()
 {
     /*about pid value, you can visit http://wiki.baidu.com/pages/viewpage.action?pageId=1498091635 */
+#ifdef DUHOME_BDVS_DISABLE
     return pid;
+#else
+    if(g_bdsc_engine && g_bdsc_engine->g_vendor_info && g_bdsc_engine->g_vendor_info->bdvs_pid) {
+        return atoi(g_bdsc_engine->g_vendor_info->bdvs_pid);
+    } else {
+        ESP_LOGE("bds_private", "g_bdsc_engine is null");
+        return pid;
+    }
+#endif
 }
 
 int get_bds_assist_pid()
@@ -26,12 +34,30 @@ int get_bds_assist_pid()
 
 const char *get_bds_key()
 {
+#ifdef DUHOME_BDVS_DISABLE
     return "com.baidu.iot";
+#else
+    if(g_bdsc_engine && g_bdsc_engine->g_vendor_info && g_bdsc_engine->g_vendor_info->bdvs_key) {
+        return g_bdsc_engine->g_vendor_info->bdvs_key;
+    } else {
+        ESP_LOGE("bds_private", "g_bdsc_engine is null");
+        return "com.baidu.iot";
+    }
+#endif
 }
 
 const char *get_bds_host()
 {    /*about host address, you can visit http://wiki.baidu.com/pages/viewpage.action?pageId=1498091635 */
+#ifdef DUHOME_BDVS_DISABLE
     return "leetest.baidu.com";
+#else
+    if(g_bdsc_engine && g_bdsc_engine->g_vendor_info && g_bdsc_engine->g_vendor_info->bdvs_asr_url) {
+        return g_bdsc_engine->g_vendor_info->bdvs_asr_url + strlen("https://");
+    } else {
+        ESP_LOGE("bds_private", "g_bdsc_engine is null");
+        return "leetest.baidu.com";
+    }
+#endif
 }
 
 typedef bdsc_asr_params_t* (*wrapper_func_t)(char *sn,

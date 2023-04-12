@@ -67,7 +67,7 @@ void bdsc_start_asr(int back_time)
                         g_bdsc_engine->g_vendor_info->fc,
                         atoi(g_bdsc_engine->g_vendor_info->bdvs_pid));
 
-    bds_hh2_loge(TAG, "asr pam is %s", pam_data);
+    bds_hh2_loge(TAG, "sn:%s asr pam is %s", sn, pam_data);
     bdsc_asr_params_t *asr_params = bdsc_asr_params_create_wrapper(bdsc_asr_params_create, sn, 16000,\
                                                             g_bdsc_engine->cuid, back_time,\
                                                             0, strlen(pam_data) + 1, pam_data);

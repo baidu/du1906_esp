@@ -25,6 +25,7 @@
 #include "bdvs_protocol_helper.hpp"
 #include "bdvs_active_device_handler.h"
 
+#include "bdsc_engine.h"
 #define TAG "ACTIVE_DEV"
 
 extern const uint8_t server_root_cert_pem_start[] asm("_binary_server_root_cert_pem_start");
@@ -67,7 +68,7 @@ static void active_device_update_token_alpha(char *token_alpha)
 {
     profile_key_set(PROFILE_KEY_TYPE_BDVS_TOKEN_ALPHA, token_alpha);
 }
-
+extern "C" void config_sdk(bds_client_handle_t handle);
 static int payload_data_handle(cJSON *action)
 {
     bds_hh2_logi(TAG, "action handle callback enter ==>");
@@ -150,7 +151,10 @@ static int payload_data_handle(cJSON *action)
             active_device_update_token_alpha(token->valuestring);
         }
     }
-
+    if (g_bdsc_engine) {
+        config_sdk(g_bdsc_engine->g_client_handle);
+        bdsc_link_start();
+    }
     return 0;
 }
 
