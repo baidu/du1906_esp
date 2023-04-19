@@ -141,6 +141,7 @@ struct bdsc_engine {
     EventGroupHandle_t      wk_group;
 
     bdsc_engine_internal_st g_asr_tts_state;
+    bdsc_engine_internal_st g_active_tts_state;
     bool                    cur_in_asr_session;
     bool                    need_skip_current_pending_http_part;
 

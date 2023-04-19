@@ -797,10 +797,11 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                 }
                 break;
             }
-#ifdef DUHOME_BDVS_DISABLE
+#ifndef DUHOME_BDVS_DISABLE
         case EVENT_EVENTUPLOAD_BEGIN: {
             bdsc_event_process_t *process = (bdsc_event_process_t *)elem.data;
             if (process) {
+                g_bdsc_engine->g_active_tts_state = ASR_TTS_ENGINE_GOT_ASR_BEGIN;
                 ESP_LOGW(TAG, "---> EVENT_EVENTUPLOAD_BEGIN sn=%s", process->sn);
             } else {
                 ESP_LOGE(TAG, "---> EVENT_EVENTUPLOAD_BEGIN process null");
@@ -827,19 +828,54 @@ int32_t handle_bdsc_event(engine_elem_t elem)
         }
         case EVENT_EVENTUPLOAD_DATA: {
             bdsc_event_data_t *extern_result = (bdsc_event_data_t *)elem.data;
-            ESP_LOGI(TAG, "got 1st extern data");
-            if (extern_result) {
-                ESP_LOGW(TAG, "---> EVENT_EVENTUPLOAD_DATA sn=%s, idx=%d, buffer_length=%d, buffer=%.*s",
+            switch(g_bdsc_engine->g_active_tts_state) {
+            case ASR_TTS_ENGINE_GOT_ASR_BEGIN: {
+                ESP_LOGI(TAG, "got 1st extern data");
+                if (extern_result) {
+                    ESP_LOGW(TAG, "---> EVENT_EVENTUPLOAD_DATA sn=%s, idx=%d, buffer_length=%d, buffer=%.*s",
                             extern_result->sn, extern_result->idx, extern_result->buffer_length,
                             extern_result->buffer_length, extern_result->buffer);
+                    g_bdsc_engine->g_active_tts_state = ASR_TTS_ENGINE_GOT_EXTERN_DATA;
+                    if (json_buf) {
+                        free(json_buf);
+                        json_buf = NULL;
+                    }
+                    if (extern_result->idx < 0) {
+                        json_buf = audio_calloc(1, extern_result->buffer_length + 1);
+                    } else {
+                        json_buf = audio_calloc(1, extern_result->buffer_length + 2048 + 1);  //多2048个byte for 拆包后的拼包。
+                                                                                              //对于超过4k的nlp文字描述，中间文本丢弃，不参与json解析
+                    }
 
-                char *json_buf = NULL;
-                json_buf = calloc(1, extern_result->buffer_length + 1);
-                memcpy(json_buf, extern_result->buffer, extern_result->buffer_length);
-                desire = notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
-                free(json_buf);
+                    // char *json_buf = NULL;
+                    // json_buf = calloc(1, extern_result->buffer_length + 1);
+                    memcpy(json_buf, extern_result->buffer, extern_result->buffer_length);
+                    if(extern_result->idx < 0) {                                              //nlp data end
+                        notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
+                        free(json_buf);
+                        json_buf = NULL;
+                    }
+                }
+                break;
             }
+            case ASR_TTS_ENGINE_GOT_EXTERN_DATA:
+                ESP_LOGI(TAG, "got 1+ extern data");
+                if (extern_result) {
+                    ESP_LOGW(TAG, "---> EVENT_ASR_EXTERN_DATA sn=%s, idx=%d, buffer_length=%d, buffer=%s",
+                                extern_result->sn, extern_result->idx,
+                                extern_result->buffer_length, extern_result->buffer);
+                    g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_EXTERN_DATA;
+                    if (extern_result->idx < 0 && json_buf) {
+                        memcpy(json_buf + strlen(json_buf), extern_result->buffer, extern_result->buffer_length);
+                        notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
+                        free(json_buf);
+                        json_buf = NULL;
+                    }
+                }
             break;
+            default:break;
+            }
+
         }
         case EVENT_EVENTUPLOAD_ERROR: {
             bdsc_event_error_t *error = (bdsc_event_error_t *)elem.data;
