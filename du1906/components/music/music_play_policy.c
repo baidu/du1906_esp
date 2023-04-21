@@ -110,8 +110,9 @@ void play_tone_by_id(bdsc_hint_type_t id)
             break;
         case BDSC_HINT_HAODE:
             audio_player_tone_play(tone_uri[TONE_TYPE_HAODE], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
+            break;
         default:
-            ESP_LOGE(TAG, "invalid hint type");
+            ESP_LOGE(TAG, "invalid hint type %d", id);
             break;
     }
 }

@@ -40,7 +40,7 @@
 #include "play_list.h"
 #include "migu_music_service.h"
 #include "migu_sdk_helper.h"
-#include "bdvs_media_common_handler.h"
+#include "bdvs_intent_handler.h"
 
 #define TAG "MUSIC_TASK"
 static audio_thread_t next_song_task_handle = NULL;

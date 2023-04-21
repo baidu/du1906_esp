@@ -47,7 +47,6 @@
 
 #ifndef DUHOME_BDVS_DISABLE
 #include "bdvs_active_device_handler.h"
-#include "bdvs_media_common_handler.h"
 #include "bdvs_active_tts_handler.h"
 #include "bdvs_intent_handler.h"
 #endif
@@ -334,7 +333,6 @@ void startup_system()
 {
 #ifndef DUHOME_BDVS_DISABLE
     receive_data_handle_init();
-    media_handle_init();
     intent_handle_init();
     start_active_device_task(); // start active task
 #endif

@@ -18,6 +18,20 @@ extern "C" {
 
 void intent_handle_init();
 
+/**
+ * @brief next media
+ *
+ * @param domain :one of "music" "fm" "news"
+ */
+void media_control_event_next(char *domain);
+
+/**
+ * @brief
+ *
+* @param domain :one of "music" "fm" "news"
+ */
+void media_control_event_pre(char *domain);
+
 #ifdef __cplusplus
 }
 #endif
