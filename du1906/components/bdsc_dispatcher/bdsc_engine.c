@@ -382,7 +382,7 @@ bdsc_engine_handle_t bdsc_engine_init(bdsc_engine_config_t *cfg)
     if (!g_bdsc_engine->sc_customer_data) {
         g_bdsc_engine->sc_customer_data = audio_strdup(customer_data);
     }
-    check_smartconfig_on_boot();
+    //check_smartconfig_on_boot();
 #ifdef DUHOME_BDVS_DISABLE
     if (g_vendor_info->mqtt_broker[0] == '\0' ||
         g_vendor_info->mqtt_username[0] == '\0' ||
@@ -395,7 +395,7 @@ bdsc_engine_handle_t bdsc_engine_init(bdsc_engine_config_t *cfg)
 #else
     startup_system();
 #endif
-
+    check_smartconfig_on_boot();
     return g_bdsc_engine;
 }
 

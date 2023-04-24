@@ -44,7 +44,7 @@
 #ifndef DUHOME_BDVS_DISABLE
 #include "bdvs_protocol_helper_c_wrapper.h"
 #endif
-
+extern int get_bds_primary_pid();
 const char *TAG = "BDSC_CMD";
 void bdsc_start_asr(int back_time)
 {
@@ -61,11 +61,12 @@ void bdsc_start_asr(int back_time)
         return;
     }
 #else
+
     char* pam_data = bdvs_asr_pam_build_c_wrapper(g_bdsc_engine->g_vendor_info->ak,
                         g_bdsc_engine->g_vendor_info->sk,
                         g_bdsc_engine->g_vendor_info->pk,
                         g_bdsc_engine->g_vendor_info->fc,
-                        atoi(g_bdsc_engine->g_vendor_info->bdvs_pid));
+                        get_bds_primary_pid());
 
     bds_hh2_loge(TAG, "sn:%s asr pam is %s", sn, pam_data);
     bdsc_asr_params_t *asr_params = bdsc_asr_params_create_wrapper(bdsc_asr_params_create, sn, 16000,\
