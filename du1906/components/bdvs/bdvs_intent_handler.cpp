@@ -121,7 +121,22 @@ static int volume_to_handle_callback(std::string in_value)
 {
     ESP_LOGI(TAG,"volume up handle callback enter ==>");
     bdsc_play_hint(BDSC_HINT_HAODE);
-    audio_player_vol_set(atoi(in_value.c_str()));
+
+    cJSON* json = cJSON_Parse(in_value.c_str());
+    cJSON* slots = cJSON_GetObjectItem(json, "slots");
+    if (cJSON_IsObject(slots)) {
+        cJSON* value = cJSON_GetObjectItem(slots, "value");
+        if (cJSON_IsArray(value)) {
+            cJSON* item = cJSON_GetArrayItem(value, 0);
+            cJSON* value_num = cJSON_GetObjectItem(item, "value");
+            if (cJSON_IsNumber(value_num)) {
+                int volume = value_num->valueint;
+                audio_player_vol_set(volume);
+                ESP_LOGW(TAG, "set volume: %d\n", volume);
+            }
+        }
+    }
+    cJSON_Delete(json);
     ESP_LOGW(TAG, "VOICE_CTL_VOL_TO:%s", in_value.c_str());
     return 0;
 }
