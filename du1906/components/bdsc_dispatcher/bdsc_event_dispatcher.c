@@ -544,7 +544,7 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                                 ESP_LOGE(TAG, "audio_calloc json buff fail");
                                 break;
                             }
-                            memcpy(json_buf, extern_result->buffer + 12, extern_result->buffer_length);
+                            memcpy(json_buf, extern_result->buffer + 12, extern_result->buffer_length - 12);
                             if(extern_result->idx < 0) {                                              //nlp data end
                                 desire = notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
                                 free(json_buf);
@@ -554,14 +554,14 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                         break;
                     case ASR_TTS_ENGINE_GOT_EXTERN_DATA:
                         ESP_LOGI(TAG, "got 1+ extern data");
-                        // EXTERN_DATA 长度如果大于2048字节，会分包发送
+                        // EXTERN_DATA 长度如果大于2048字节，会分包发送，并且 buffer 不需要偏移 12 个字节
                         if (extern_result) {
                             ESP_LOGW(TAG, "---> EVENT_ASR_EXTERN_DATA sn=%s, idx=%d, buffer_length=%d, buffer=%s",
                                      extern_result->sn, extern_result->idx,
                                      extern_result->buffer_length, extern_result->buffer);
                             g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_EXTERN_DATA;
                             if (extern_result->idx < 0 && json_buf) {
-                                memcpy(json_buf + strlen(json_buf), extern_result->buffer + 12, extern_result->buffer_length);
+                                memcpy(json_buf + strlen(json_buf), extern_result->buffer, extern_result->buffer_length);
                                 desire = notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
                                 free(json_buf);
                                 json_buf = NULL;
@@ -797,13 +797,123 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                 }
                 break;
             }
+#ifndef DUHOME_BDVS_DISABLE
+        case EVENT_EVENTUPLOAD_BEGIN: {
+            bdsc_event_process_t *process = (bdsc_event_process_t *)elem.data;
+            if (process) {
+                g_bdsc_engine->g_active_tts_state = ASR_TTS_ENGINE_GOT_ASR_BEGIN;
+                ESP_LOGW(TAG, "---> EVENT_EVENTUPLOAD_BEGIN sn=%s", process->sn);
+            } else {
+                ESP_LOGE(TAG, "---> EVENT_EVENTUPLOAD_BEGIN process null");
+            }
+            break;
+
+            //todo: add other handle if need
+        }
+        case EVENT_EVENTUPLOAD_END: {
+            bdsc_event_process_t *process = (bdsc_event_process_t *)elem.data;
+            if (process) {
+                ESP_LOGW(TAG, "---> EVENT_EVENTUPLOAD_END sn=%s", process->sn);
+            }
+            break;
+        }
+        case EVENT_EVENTUPLOAD_CANCEL: {
+            bdsc_event_process_t *process = (bdsc_event_process_t *)elem.data;
+            if (process) {
+                ESP_LOGW(TAG, "---> EVENT_EVENTUPLOAD_CANCEL sn=%s", process->sn);
+            } else {
+                ESP_LOGE(TAG, "---> EVENT_EVENTUPLOAD_CANCEL process null");
+            }
+            break;
+        }
+        case EVENT_EVENTUPLOAD_DATA: {
+            bdsc_event_data_t *extern_result = (bdsc_event_data_t *)elem.data;
+            switch(g_bdsc_engine->g_active_tts_state) {
+            case ASR_TTS_ENGINE_GOT_ASR_BEGIN: {
+                ESP_LOGI(TAG, "got 1st extern data");
+                if (extern_result) {
+                    ESP_LOGW(TAG, "---> EVENT_EVENTUPLOAD_DATA sn=%s, idx=%d, buffer_length=%d, buffer=%.*s",
+                            extern_result->sn, extern_result->idx, extern_result->buffer_length,
+                            extern_result->buffer_length, extern_result->buffer);
+                    g_bdsc_engine->g_active_tts_state = ASR_TTS_ENGINE_GOT_EXTERN_DATA;
+                    if (json_buf) {
+                        free(json_buf);
+                        json_buf = NULL;
+                    }
+                    if (extern_result->idx < 0) {
+                        json_buf = audio_calloc(1, extern_result->buffer_length + 1);
+                    } else {
+                        json_buf = audio_calloc(1, extern_result->buffer_length + 2048 + 1);  //多2048个byte for 拆包后的拼包。
+                                                                                              //对于超过4k的nlp文字描述，中间文本丢弃，不参与json解析
+                    }
+
+                    // char *json_buf = NULL;
+                    // json_buf = calloc(1, extern_result->buffer_length + 1);
+                    memcpy(json_buf, extern_result->buffer, extern_result->buffer_length);
+                    if(extern_result->idx < 0) {                                              //nlp data end
+                        notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
+                        free(json_buf);
+                        json_buf = NULL;
+                    }
+                }
+                break;
+            }
+            case ASR_TTS_ENGINE_GOT_EXTERN_DATA:
+                ESP_LOGI(TAG, "got 1+ extern data");
+                if (extern_result) {
+                    ESP_LOGW(TAG, "---> EVENT_ASR_EXTERN_DATA sn=%s, idx=%d, buffer_length=%d, buffer=%s",
+                                extern_result->sn, extern_result->idx,
+                                extern_result->buffer_length, extern_result->buffer);
+                    g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_EXTERN_DATA;
+                    if (extern_result->idx < 0 && json_buf) {
+                        memcpy(json_buf + strlen(json_buf), extern_result->buffer, extern_result->buffer_length);
+                        notify_bdsc_engine_event_to_user(BDSC_EVENT_ON_NLP_RESULT, (uint8_t *)json_buf, strlen((const char *)json_buf) + 1);
+                        free(json_buf);
+                        json_buf = NULL;
+                    }
+                }
+            break;
+            default:break;
+            }
+
+        }
+        case EVENT_EVENTUPLOAD_ERROR: {
+            bdsc_event_error_t *error = (bdsc_event_error_t *)elem.data;
+            if (error) {
+                ESP_LOGW(TAG, "---> EVENT_EVENTUPLOAD_ERROR code=%"PRId32"--info=%s", error->code, error->info);
+            } else {
+                ESP_LOGE(TAG, "---> EVENT_EVENTUPLOAD_ERROR error null");
+            }
+            break;
+        }
+        case EVENT_EVENTUPLOAD_TTS: { // active tts data
+            bdsc_event_data_t *tts_data = (bdsc_event_data_t *)elem.data;
+            if (tts_data) {
+                /*
+                * Get rid of any log printing in tts playing !!!
+                */
+                ESP_LOGW(TAG, "---> EVENT_ASR_TTS_DATA sn=%s, idx=%d, buffer_length=%d, buffer=%p",
+                            tts_data->sn, tts_data->idx,
+                            tts_data->buffer_length, tts_data->buffer);
+
+                if (!need_skip_current_playing()) {
+                    int ret = handle_package_data(tts_data);
+                    if (ret == -1 && tts_data->idx == 0) {
+                        // if the first tts data is error, skip current playing
+                        bdsc_engine_skip_current_session_playing_once_flag_set(g_bdsc_engine);
+                    }
+                }
+            }
+            break;
+        }
         case EVENT_RECV_MQTT_PUSH_URL: {
                 bdsc_stop_asr();
                 g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_ASR_END;
                 char *mqtt_url = audio_strdup((const char*)elem.data);
                 send_music_queue(MQTT_URL, mqtt_url);
                 break;
-            }
+        }
+#endif
         case EVENT_RECV_A2DP_START_PLAY: {
                 bdsc_stop_asr();
                 g_bdsc_engine->g_asr_tts_state = ASR_TTS_ENGINE_GOT_ASR_END;
@@ -819,7 +929,7 @@ int32_t handle_bdsc_event(engine_elem_t elem)
                 break;
             }
         default:
-            ESP_LOGE(TAG, "!!! unknow event !!!");
+            ESP_LOGE(TAG, "!!! unknow event: %d!!!", elem.event);
             break;
     }
     

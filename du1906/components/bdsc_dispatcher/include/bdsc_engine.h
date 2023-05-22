@@ -22,7 +22,6 @@
 #include "bdsc_cmd.h"
 #include "generate_pam.h"
 #include "bdsc_profile.h"
-#include "auth_task.h"
 #include "bdsc_event_dispatcher.h"
 #include "mqtt_client.h"
 #include "cJSON.h"
@@ -113,12 +112,26 @@ typedef enum {
     ASR_TTS_ENGINE_WANT_RESTART_ASR,
 } bdsc_engine_internal_st;
 
+#ifndef DUHOME_BDVS_DISABLE
+typedef struct {
+    int speed;
+    int pit;
+    int volume;
+    char *pronounce;
+    int rate;
+    int reverb;
+} tts_param_t;
+#endif
+
 /**
  * @brief bdsc engine instance
  */
 struct bdsc_engine {
     bdsc_engine_config_t    *cfg;
     vendor_info_t           *g_vendor_info;
+#ifndef DUHOME_BDVS_DISABLE
+    tts_param_t             g_tts_param;
+#endif
     char                    cuid[256];
     bds_client_handle_t     g_client_handle;
     bdsc_auth_cb            g_auth_cb;
@@ -128,6 +141,7 @@ struct bdsc_engine {
     EventGroupHandle_t      wk_group;
 
     bdsc_engine_internal_st g_asr_tts_state;
+    bdsc_engine_internal_st g_active_tts_state;
     bool                    cur_in_asr_session;
     bool                    need_skip_current_pending_http_part;
 
@@ -251,12 +265,16 @@ int bdsc_engine_channel_data_upload(uint8_t *upload_data, size_t upload_data_len
  */
 esp_err_t bdsc_engine_deinit(bdsc_engine_handle_t client);
 
+#ifdef DUHOME_BDVS_DISABLE
 void bdsc_engine_start_tts(const char *tts_text);
+#endif
 
 void start_sdk();
 void stop_sdk();
 
+#ifdef DUHOME_BDVS_DISABLE
 #define ACTIVE_TTS_PREFIX   "http://activetts/"
+#endif
 
 #ifdef __cplusplus
 }

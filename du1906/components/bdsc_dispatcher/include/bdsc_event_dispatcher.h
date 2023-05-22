@@ -41,6 +41,7 @@ typedef enum {
     BDSC_HINT_WIFI_CONFIGUING,
     BDSC_HINT_WIFI_CONFIG_OK,
     BDSC_HINT_WIFI_CONFIG_FAIL,
+    BDSC_HINT_HAODE,
 } bdsc_hint_type_t;
 
 /**

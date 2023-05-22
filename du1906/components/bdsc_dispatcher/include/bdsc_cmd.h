@@ -23,7 +23,7 @@ extern "C" {
 /**
  * @brief send start asr cmd to DSP
  */
-void bdsc_start_asr();
+void bdsc_start_asr(int back_time);
 
 /**
  * @brief send stop asr cmd to DSP
