@@ -296,6 +296,9 @@ void show_wakeup_async(void)
     }
     xEventGroupClearBits(g_bdsc_engine->wk_group, WK_FINISH);
 
+    // set volume to default when mute
+    audio_player_vol_mute_to_default();
+
     ret = app_task_regist(APP_TASK_ID_WK, wk_task, NULL, NULL);
     if (ret == ESP_FAIL) {
         ESP_LOGE(TAG, "Couldn't create wk_task");
@@ -366,7 +369,6 @@ static char *json_buf = NULL;
 int32_t handle_bdsc_event(engine_elem_t elem)
 {
     bdsc_custom_desire_action_t desire = BDSC_CUSTOM_DESIRE_DEFAULT;
-    
     switch (elem.event) {
         case EVENT_ASR_ERROR: {
                 bdsc_event_error_t *error = (bdsc_event_error_t *)elem.data;

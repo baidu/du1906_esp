@@ -153,10 +153,7 @@ esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_service_ev
                 ESP_LOGI(TAG, "[ * ] [Vol-] input key event");
                 int player_volume = 0;
                 audio_player_vol_get(&player_volume);
-                player_volume -= 10;
-                if (player_volume < 0) {
-                    player_volume = 0;
-                }
+                player_volume = VOLUME_VALID(player_volume - 10);
                 audio_player_vol_set(player_volume);
                 ESP_LOGI(TAG, "Now volume is %d", player_volume);
             }
@@ -166,10 +163,7 @@ esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_service_ev
                 ESP_LOGI(TAG, "[ * ] [Vol+] input key event");
                 int player_volume = 0;
                 audio_player_vol_get(&player_volume);
-                player_volume += 10;
-                if (player_volume > 100) {
-                    player_volume = 100;
-                }
+                player_volume = VOLUME_VALID(player_volume + 10);
                 audio_player_vol_set(player_volume);
                 ESP_LOGI(TAG, "Now volume is %d", player_volume);
             } else if (evt->type == INPUT_KEY_SERVICE_ACTION_PRESS) {
