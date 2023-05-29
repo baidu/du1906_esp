@@ -246,6 +246,24 @@ audio_err_t audio_player_vol_set(int vol)
     return ret;
 }
 
+audio_err_t audio_player_vol_mute_to_default(void)
+{
+    audio_err_t ret = ESP_OK;
+    int vol = 0;
+
+    ret = audio_player_vol_get(&vol);
+    if (ret != ESP_OK) {
+        ESP_LOGI(TAG, "vol get fail %d", ret);
+        return ret;
+    }
+
+    if (vol == 0) {
+        ret = esp_audio_helper_vol_set(VOLUME_DEFAULT);
+    }
+
+    return ret;
+}
+
 audio_err_t audio_player_playlist_set(playlist_handle_t pl)
 {
     AUDIO_NULL_CHECK(TAG, pl, return ESP_ERR_AUDIO_INVALID_PARAMETER);

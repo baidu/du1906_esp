@@ -28,7 +28,6 @@
 #include "receive_data_filter.h"
 
 #define TAG "INTENT_HDL"
-
 // next media
 void media_control_event_next(char *domain)
 {
@@ -99,7 +98,7 @@ static int volume_down_handle_callback(std::string in_value)
     bdsc_play_hint(BDSC_HINT_HAODE);
     int player_volume = 0;
     audio_player_vol_get(&player_volume);
-    player_volume = (player_volume >10) ? player_volume -10 : 0;
+    player_volume = VOLUME_VALID(player_volume - 10);
     audio_player_vol_set(player_volume);
     ESP_LOGW(TAG, "VOICE_CTL_VOL_DOWN");
     return 0;
@@ -111,7 +110,7 @@ static int volume_up_handle_callback(std::string in_value)
     bdsc_play_hint(BDSC_HINT_HAODE);
     int player_volume = 0;
     audio_player_vol_get(&player_volume);
-    player_volume = (player_volume < 90)?player_volume +10:100;
+    player_volume = VOLUME_VALID(player_volume + 10);
     audio_player_vol_set(player_volume);
     ESP_LOGW(TAG, "VOICE_CTL_VOL_UP");
     return 0;
@@ -126,11 +125,16 @@ static int volume_to_handle_callback(std::string in_value)
     cJSON* slots = cJSON_GetObjectItem(json, "slots");
     if (cJSON_IsObject(slots)) {
         cJSON* value = cJSON_GetObjectItem(slots, "value");
+        if (!cJSON_IsArray(value)) {
+            ESP_LOGI(TAG,"value is null, try percent_value");
+            value = cJSON_GetObjectItem(slots, "percent_value");
+        }
         if (cJSON_IsArray(value)) {
             cJSON* item = cJSON_GetArrayItem(value, 0);
             cJSON* value_num = cJSON_GetObjectItem(item, "value");
             if (cJSON_IsNumber(value_num)) {
-                int volume = value_num->valueint;
+                // vol等于0时为静音, 其他音量范围为: 5 ~ 100
+                int volume = (value_num->valueint == 0) ? 0 : VOLUME_VALID(value_num->valueint);
                 audio_player_vol_set(volume);
                 ESP_LOGW(TAG, "set volume: %d\n", volume);
             }
@@ -138,6 +142,51 @@ static int volume_to_handle_callback(std::string in_value)
     }
     cJSON_Delete(json);
     ESP_LOGW(TAG, "VOICE_CTL_VOL_TO:%s", in_value.c_str());
+    return 0;
+}
+
+static int volume_max_handle_callback(std::string in_value)
+{
+    ESP_LOGI(TAG,"volume max handle callback enter ==>");
+    bdsc_play_hint(BDSC_HINT_HAODE);
+
+    audio_player_vol_set(VOLUME_MAX);
+    ESP_LOGW(TAG, "set volume: %d\n", VOLUME_MAX);
+
+    return 0;
+}
+
+static int volume_min_handle_callback(std::string in_value)
+{
+    ESP_LOGI(TAG,"volume min handle callback enter ==>");
+    bdsc_play_hint(BDSC_HINT_HAODE);
+
+    audio_player_vol_set(VOLUME_MIN);
+    ESP_LOGW(TAG, "set volume: %d\n", VOLUME_MIN);
+
+    return 0;
+}
+
+static int volume_mid_handle_callback(std::string in_value)
+{
+    ESP_LOGI(TAG,"volume mid handle callback enter ==>");
+    bdsc_play_hint(BDSC_HINT_HAODE);
+
+    audio_player_vol_set(VOLUME_MID);
+    ESP_LOGW(TAG, "set volume: %d\n", VOLUME_MID);
+
+    return 0;
+}
+
+static int volume_mute_handle_callback(std::string in_value)
+{
+    ESP_LOGI(TAG,"volume mid handle callback enter ==>");
+    bdsc_play_hint(BDSC_HINT_HAODE);
+
+    // 静音时音量为0 下次唤醒时音量会恢复默认值
+    audio_player_vol_set(VOLUME_MUTE);
+    ESP_LOGW(TAG, "set volume: %d\n", VOLUME_MUTE);
+
     return 0;
 }
 
@@ -170,4 +219,13 @@ void intent_handle_init()
     add_new_intent_handle("sys_command", "up_volume", volume_up_handle_callback);
     // “音量调到xxx”
     add_new_intent_handle("sys_command", "to_volume", volume_to_handle_callback);
+    // “音量调到最大”
+    add_new_intent_handle("sys_command", "max_volume", volume_max_handle_callback);
+    // “音量调到最小”
+    add_new_intent_handle("sys_command", "min_volume", volume_min_handle_callback);
+    // “音量调到中等”
+    add_new_intent_handle("sys_command", "mid_volume", volume_mid_handle_callback);
+    // “静音”
+    add_new_intent_handle("sys_command", "control.hardware.volume.mute", volume_mute_handle_callback);
+
 }
