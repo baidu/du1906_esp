@@ -108,8 +108,11 @@ void play_tone_by_id(bdsc_hint_type_t id)
         case BDSC_HINT_WIFI_CONFIG_FAIL:
             audio_player_tone_play(tone_uri[TONE_TYPE_WIFI_CONFIG_FAIL], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
             break;
+        case BDSC_HINT_HAODE:
+            audio_player_tone_play(tone_uri[TONE_TYPE_HAODE], false, false, MEDIA_SRC_TYPE_TONE_FLASH);
+            break;
         default:
-            ESP_LOGE(TAG, "invalid hint type");
+            ESP_LOGE(TAG, "invalid hint type %d", id);
             break;
     }
 }
@@ -186,9 +189,38 @@ void app_music_play_policy(music_queue_t pQueue_data)
         pQueue_data.type == MUSIC_CTL_PAUSE ||
         pQueue_data.type == MUSIC_CTL_STOP) &&
         pQueue_data.action_type == RAW_TTS) {
-        
+#ifdef DUHOME_BDVS_DISABLE
         ESP_LOGI(TAG, "policy 4: device control case, '好的' need raw_play");
         handle_play_cmd(CMD_RAW_PLAY_START, NULL, 0);
+#else
+        ESP_LOGI(TAG, "policy 4: device control case");
+        if (pQueue_data.type == MUSIC_CTL_CONTINUE) {
+            // 'continue' case, no need resume, remove music anyway
+            pls_delete_head_music(g_pls_handle);
+            // resume if necessary
+            current_music = pls_get_current_music(g_pls_handle);
+            if (current_music && (current_music->play_state == PAUSE_STATE ||
+                current_music->play_state == FORCE_PAUSE_STATE)) {
+                audio_player_resume();
+                current_music->play_state = RUNNING_STATE;
+            }
+        } else if (pQueue_data.type == MUSIC_CTL_PAUSE) {
+            // 'pause' case, no need resume, remove music anyway
+            pls_delete_head_music(g_pls_handle);
+            // pause if necessary
+            current_music = pls_get_current_music(g_pls_handle);
+            if (current_music) {
+                audio_player_pause();
+                current_music->play_state = FORCE_PAUSE_STATE;
+            }
+        } else if (pQueue_data.type == MUSIC_CTL_STOP) {
+            // '停止' case, no need resume, remove music anyway
+            pls_delete_head_music(g_pls_handle);
+            // delete music
+            pls_delete_head_music(g_pls_handle);
+            audio_player_stop();
+        }
+#endif
         return;
     }
 
@@ -300,7 +332,9 @@ void app_music_play_policy(music_queue_t pQueue_data)
                 } else if (current_music->type == ACTIVE_TTS) {
                     // '您所播放的歌曲版权已过期' case, no need resume, remove music anyway
                     pls_delete_head_music(g_pls_handle);
-                } else if (current_music->type == MUSIC_CTL_CONTINUE) {
+                }
+#ifdef DUHOME_BDVS_DISABLE
+                else if (current_music->type == MUSIC_CTL_CONTINUE) {
                     // '继续' case, no need resume, remove music anyway
                     pls_delete_head_music(g_pls_handle);
                     // resume if necessary
@@ -332,7 +366,9 @@ void app_music_play_policy(music_queue_t pQueue_data)
                     audio_player_clear_audio_info();
                     raw_data_free(raw);
                     return;
-                } else {
+                }
+#endif
+                else {
                     ESP_LOGD(TAG, "unknow music, %d, %d", current_music->action_type, current_music->type);
                 }
             }

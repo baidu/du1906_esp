@@ -30,7 +30,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
 #define DEFAULT_AUDIO_PLAYER_CONFIG() {\
     .external_ram_stack = false,\
     .task_prio = 6,\
@@ -40,6 +39,15 @@ extern "C" {
     .music_list = NULL,\
     .handle = NULL,\
 }
+
+#define AP_MIN(a, b) ((a)<(b)?(a):(b))
+#define AP_MAX(a, b) ((a)>(b)?(a):(b))
+#define VOLUME_MAX          (100)
+#define VOLUME_MIN          (5)
+#define VOLUME_MID          (50)
+#define VOLUME_MUTE         (0)
+#define VOLUME_DEFAULT      (40)
+#define VOLUME_VALID(vol)   AP_MAX(AP_MIN((vol), VOLUME_MAX), VOLUME_MIN)
 
 /*
  * @brief Init audio player with specific parameters
@@ -354,6 +362,16 @@ audio_err_t audio_player_vol_get(int *vol);
  *      - ESP_ERR_AUDIO_INVALID_PARAMETER: invalid arguments
  */
 audio_err_t audio_player_vol_set(int vol);
+
+/**
+ * @brief Setting player volume to defaule when mute
+ *
+ * @return
+ *      - ESP_ERR_AUDIO_NO_ERROR: on success
+ *      - ESP_ERR_AUDIO_CTRL_HAL_FAIL: error with hardware
+ *      - ESP_ERR_AUDIO_INVALID_PARAMETER: invalid arguments
+ */
+audio_err_t audio_player_vol_mute_to_default(void);
 
 /* @brief Call this function before play to change the music source type
  *

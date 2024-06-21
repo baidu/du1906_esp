@@ -119,7 +119,7 @@ int bdsc_send_https_post_sync(char *server, int port,
     int ret = 0, len = 0;
     uint8_t *ret_buf = NULL;
     uint8_t *tmp_buf = NULL;
-    int tmp_buf_len = 1024;
+    int tmp_buf_len = 4096;
     int cnt = 0;
     
     tmp_buf = audio_malloc(tmp_buf_len);

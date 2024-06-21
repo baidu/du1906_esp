@@ -198,11 +198,35 @@ static int generate_profile(vendor_info_t *vendor_info)
         ESP_LOGE(TAG, "nvs_get_i32 fail#10: %d", ret);
         vendor_info->is_active_music_license = 0;
     }
-
+#ifndef DUHOME_BDVS_DISABLE
+    if (ESP_FAIL == (ret = bdsc_nvs_get_str(deviceNvsHandle, PROFILE_NVS_KEY_ASR_URL, &vendor_info->bdvs_asr_url))) {
+        ESP_LOGW(TAG, "bdvs_asr_url not save nvs");
+    }
+    if (ESP_FAIL == (ret = bdsc_nvs_get_str(deviceNvsHandle, PROFILE_NVS_KEY_EVENT_URL, &vendor_info->bdvs_evt_url))) {
+        ESP_LOGW(TAG, "bdvs_evt_url not save nvs");
+    }
+    if (ESP_FAIL == (ret = bdsc_nvs_get_str(deviceNvsHandle, PROFILE_NVS_KEY_BDVSID, &vendor_info->bdvsid))) {
+        ESP_LOGW(TAG, "bdvsid not save nvs");
+    }
+    if (ESP_FAIL == (ret = bdsc_nvs_get_str(deviceNvsHandle, PROFILE_NVS_KEY_BDVS_KEY, &vendor_info->bdvs_key))) {
+        ESP_LOGW(TAG, "bdvs_key not save nvs");
+    }
+    if (ESP_FAIL == (ret = bdsc_nvs_get_str(deviceNvsHandle, PROFILE_NVS_KEY_BDVS_PID, &vendor_info->bdvs_pid))) {
+        ESP_LOGW(TAG, "bdvs_pid not save nvs");
+    }
+    if (ESP_FAIL == (ret = bdsc_nvs_get_str(deviceNvsHandle, PROFILE_NVS_KEY_BDVS_TOKEN_ALPHA, &vendor_info->bdvs_token_alpha))) {
+        ESP_LOGW(TAG, "bdvs_token_alpha not save nvs");
+    }
+    if (ESP_OK == (ret = nvs_get_i32(deviceNvsHandle, PROFILE_NVS_KEY_BDVS_DICTIONARY, &tmp_int))) {
+        vendor_info->bdvs_dictionary = tmp_int;
+    } else {
+        vendor_info->bdvs_dictionary = false;
+    }
+#endif
     ESP_LOGI(TAG, "fc            = %s", vendor_info->fc);
     ESP_LOGI(TAG, "pk            = %s", vendor_info->pk);
     ESP_LOGI(TAG, "ak            = %s", vendor_info->ak);
-    ESP_LOGD(TAG, "sk            = %s", vendor_info->sk);
+    ESP_LOGI(TAG, "sk            = %s", vendor_info->sk);
     ESP_LOGI(TAG, "mqtt_broker   = %s", vendor_info->mqtt_broker);
     ESP_LOGI(TAG, "mqtt_username = %s", vendor_info->mqtt_username);
     ESP_LOGI(TAG, "mqtt_password = %s", vendor_info->mqtt_password);
@@ -212,7 +236,15 @@ static int generate_profile(vendor_info_t *vendor_info)
     ESP_LOGI(TAG, "dsp_sub_ver     = %s", vendor_info->dsp_sub_ver);
     ESP_LOGI(TAG, "app_sub_ver     = %s", vendor_info->app_sub_ver);
     ESP_LOGI(TAG, "silent          = %d", g_bdsc_engine->silent_mode);
-
+#ifndef DUHOME_BDVS_DISABLE
+    ESP_LOGI(TAG, "bdvs_asr_url = %s", vendor_info->bdvs_asr_url ? : "NULL");
+    ESP_LOGI(TAG, "bdvs_evt_url = %s", vendor_info->bdvs_evt_url ? : "NULL");
+    ESP_LOGI(TAG, "bdvsid           = %s", vendor_info->bdvsid ? : "NULL");
+    ESP_LOGI(TAG, "bdvs_key         = %s", vendor_info->bdvs_key ? : "NULL");
+    ESP_LOGI(TAG, "bdvs_pid         = %s", vendor_info->bdvs_pid ? : "NULL");
+    ESP_LOGI(TAG, "bdvs_token_alpha = %s", vendor_info->bdvs_token_alpha ? : "NULL");
+    ESP_LOGI(TAG, "bdvs_dictionary  = %d", vendor_info->bdvs_dictionary);
+#endif
     nvs_close(deviceNvsHandle);
     return 0;
 }
@@ -220,6 +252,15 @@ static int generate_profile(vendor_info_t *vendor_info)
 
 int profile_init()
 {
+#ifndef DUHOME_BDVS_DISABLE
+    // TODO: how to get tts params??
+    g_bdsc_engine->g_tts_param.speed = 0;
+    g_bdsc_engine->g_tts_param.pit = 0;
+    g_bdsc_engine->g_tts_param.volume = 0;
+    g_bdsc_engine->g_tts_param.pronounce = "0";
+    g_bdsc_engine->g_tts_param.rate = 0;
+    g_bdsc_engine->g_tts_param.reverb = 0;
+#endif
     vendor_info_t* info = audio_calloc(1, sizeof(vendor_info_t));
     if (!info) {
         ESP_LOGE(TAG, "audio_calloc fail");
@@ -355,6 +396,75 @@ int profile_key_set(bdsc_profile_key_type_t key_type, void *value)
         }
         vendor_info->is_active_music_license = *((int*)value);
         break;
+#ifndef DUHOME_BDVS_DISABLE
+    case PROFILE_KEY_TYPE_ASR_URL:
+        err = nvs_set_str(deviceNvsHandle, PROFILE_NVS_KEY_ASR_URL, (const char*)value);
+        if (ESP_OK != err) {
+            ESP_LOGE(TAG, "nvs_set_str error#10: %d", err);
+        }
+        if (vendor_info->bdvs_asr_url) {
+            free(vendor_info->bdvs_asr_url);
+        }
+        vendor_info->bdvs_asr_url = strdup((const char*)value);
+        break;
+    case PROFILE_KEY_TYPE_EVENT_URL:
+        err = nvs_set_str(deviceNvsHandle, PROFILE_NVS_KEY_EVENT_URL, (const char*)value);
+        if (ESP_OK != err) {
+            ESP_LOGE(TAG, "nvs_set_str error#10: %d", err);
+        }
+        if (vendor_info->bdvs_evt_url) {
+            free(vendor_info->bdvs_evt_url);
+        }
+        vendor_info->bdvs_evt_url = strdup((const char*)value);
+        break;
+    case PROFILE_KEY_TYPE_BDVSID:
+        err = nvs_set_str(deviceNvsHandle, PROFILE_NVS_KEY_BDVSID, (const char*)value);
+        if (ESP_OK != err) {
+            ESP_LOGE(TAG, "nvs_set_str error#10: %d", err);
+        }
+        if (vendor_info->bdvsid) {
+            free(vendor_info->bdvsid);
+        }
+        vendor_info->bdvsid = strdup((const char*)value);
+        break;
+    case PROFILE_KEY_TYPE_BDVS_KEY:
+        err = nvs_set_str(deviceNvsHandle, PROFILE_NVS_KEY_BDVS_KEY, (const char*)value);
+        if (ESP_OK != err) {
+            ESP_LOGE(TAG, "nvs_set_str error#10: %d", err);
+        }
+        if (vendor_info->bdvs_key) {
+            free(vendor_info->bdvs_key);
+        }
+        vendor_info->bdvs_key = strdup((const char*)value);
+        break;
+    case PROFILE_KEY_TYPE_BDVS_PID:
+        err = nvs_set_str(deviceNvsHandle, PROFILE_NVS_KEY_BDVS_PID, (const char*)value);
+        if (ESP_OK != err) {
+            ESP_LOGE(TAG, "nvs_set_str error#10: %d", err);
+        }
+        if (vendor_info->bdvs_pid) {
+            free(vendor_info->bdvs_pid);
+        }
+        vendor_info->bdvs_pid = strdup((const char*)value);
+        break;
+    case PROFILE_KEY_TYPE_BDVS_TOKEN_ALPHA:
+        err = nvs_set_str(deviceNvsHandle, PROFILE_NVS_KEY_BDVS_TOKEN_ALPHA, (const char*)value);
+        if (ESP_OK != err) {
+            ESP_LOGE(TAG, "nvs_set_str error#10: %d", err);
+        }
+        if (vendor_info->bdvs_token_alpha) {
+            free(vendor_info->bdvs_token_alpha);
+        }
+        vendor_info->bdvs_token_alpha = strdup((const char*)value);
+        break;
+    case PROFILE_KEY_TYPE_BDVS_DICTIONARY:
+        err = nvs_set_i32(deviceNvsHandle, PROFILE_NVS_KEY_BDVS_DICTIONARY, *((int*)value));
+        if (ESP_OK != err) {
+            ESP_LOGE(TAG, "nvs_set_i32 error#11: %d", err);
+        }
+        vendor_info->bdvs_dictionary = *((int*)value);
+        break;
+#endif
     default:
         ESP_LOGE(TAG, "unknown key_type");
         break;

@@ -41,11 +41,16 @@
 #include "bdsc_engine.h"
 #include "bds_private.h"
 
+#ifndef DUHOME_BDVS_DISABLE
+#include "bdvs_protocol_helper_c_wrapper.h"
+#endif
+extern int get_bds_primary_pid();
 const char *TAG = "BDSC_CMD";
 void bdsc_start_asr(int back_time)
 {
     char sn[BDSC_MAX_UUID_LEN] = {0};
     bds_generate_uuid(sn);
+#ifdef DUHOME_BDVS_DISABLE
     char *pam_data = audio_calloc(1, 4096);
     if(pam_data == NULL) {
         ESP_LOGE(TAG, "audio_calloc fail!!!");
@@ -55,13 +60,23 @@ void bdsc_start_asr(int back_time)
         free(pam_data);
         return;
     }
+#else
+
+    char* pam_data = bdvs_asr_pam_build_c_wrapper(g_bdsc_engine->g_vendor_info->ak,
+                        g_bdsc_engine->g_vendor_info->sk,
+                        g_bdsc_engine->g_vendor_info->pk,
+                        g_bdsc_engine->g_vendor_info->fc,
+                        get_bds_primary_pid());
+
+    bds_hh2_loge(TAG, "sn:%s asr pam is %s", sn, pam_data);
     bdsc_asr_params_t *asr_params = bdsc_asr_params_create_wrapper(bdsc_asr_params_create, sn, 16000,\
                                                             g_bdsc_engine->cuid, back_time,\
                                                             0, strlen(pam_data) + 1, pam_data);
+#endif
     bds_client_command_t asr_start = {
-            .key = CMD_ASR_START,
-            .content = asr_params,
-            .content_length = sizeof(bdsc_asr_params_t) + strlen(pam_data) + 1
+        .key = CMD_ASR_START,
+        .content = asr_params,
+        .content_length = sizeof(bdsc_asr_params_t) + strlen(pam_data) + 1
     };
     bds_client_send(g_bdsc_engine->g_client_handle, &asr_start);
     bdsc_asr_params_destroy(asr_params);

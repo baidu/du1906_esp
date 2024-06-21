@@ -14,6 +14,8 @@
 #ifndef _BDSC_HTTP_H__
 #define _BDSC_HTTP_H__
 
+#include "esp_http_client.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif

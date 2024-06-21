@@ -195,4 +195,8 @@ bdsc_eventupload_params_t *bdsc_event_params_create(char *sn,
 
 void bdsc_event_params_destroy(bdsc_eventupload_params_t *params);
 
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* MAIN_CLIENT_BDS_CLIENT_PARAMS_H_ */

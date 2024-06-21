@@ -53,6 +53,15 @@ typedef enum {
     PROFILE_KEY_TYPE_SLIENT_MODE,
     PROFILE_KEY_TYPE_LAST_OTA_URL,
     PROFILE_KEY_TYPE_IS_ACTIVE_MUSIC_LICENSE,
+#ifndef DUHOME_BDVS_DISABLE
+    PROFILE_KEY_TYPE_ASR_URL,
+    PROFILE_KEY_TYPE_EVENT_URL,
+    PROFILE_KEY_TYPE_BDVSID,
+    PROFILE_KEY_TYPE_BDVS_KEY,
+    PROFILE_KEY_TYPE_BDVS_PID,
+    PROFILE_KEY_TYPE_BDVS_DICTIONARY,
+    PROFILE_KEY_TYPE_BDVS_TOKEN_ALPHA,
+#endif
 
 } bdsc_profile_key_type_t;
 
@@ -70,6 +79,15 @@ typedef enum {
 #define PROFILE_NVS_KEY_LAST_OTA_URL    "bdd_l_url"
 #define PROFILE_NVS_KEY_IS_ACTIVE_MUSIC_LICENSE    "bdd_license"
 
+#ifndef DUHOME_BDVS_DISABLE
+#define PROFILE_NVS_KEY_ASR_URL         "bdvs_asr_url"
+#define PROFILE_NVS_KEY_EVENT_URL       "bdvs_evt_url"
+#define PROFILE_NVS_KEY_BDVSID          "bdvsid"
+#define PROFILE_NVS_KEY_BDVS_KEY        "bdvs_key"
+#define PROFILE_NVS_KEY_BDVS_PID        "bdvs_pid"
+#define PROFILE_NVS_KEY_BDVS_DICTIONARY  "bdvs_dictionary"
+#define PROFILE_NVS_KEY_BDVS_TOKEN_ALPHA "bdvs_tokenalpha"
+#endif
 
 /**
  * @brief vendor_info_t structure to store user info
@@ -91,6 +109,16 @@ typedef struct {
     char *app_sub_ver;
     char *last_ota_url;
     int is_active_music_license;
+
+#ifndef DUHOME_BDVS_DISABLE
+    char *bdvs_asr_url;
+    char *bdvs_evt_url;
+    char *bdvsid;
+    char *bdvs_key;
+    char *bdvs_pid;
+    int  bdvs_dictionary;
+    char *bdvs_token_alpha;
+#endif
 } vendor_info_t;
 
 typedef enum {
